@@ -13,8 +13,13 @@ import type { NextRequest } from "next/server";
  * the gate is disabled (fail-open) so a misconfig can't lock everyone out.
  */
 export function proxy(request: NextRequest) {
-  // Let the cron scheduler through — it has its own CRON_SECRET check.
-  if (request.nextUrl.pathname.startsWith("/api/cron/")) {
+  // Let machine endpoints through — the cron scheduler (CRON_SECRET) and the
+  // Discord interactions webhook (Ed25519 signature) authenticate themselves.
+  const { pathname } = request.nextUrl;
+  if (
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/discord/")
+  ) {
     return NextResponse.next();
   }
 

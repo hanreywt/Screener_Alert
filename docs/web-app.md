@@ -15,6 +15,7 @@ web/src/
     layout.tsx, page.tsx, globals.css     # dashboard UI
     api/analysis/route.ts                 # GET ?symbol= → full analysis JSON
     api/cron/alert/route.ts               # the serverless alerter (cron target)
+    api/discord/interactions/route.ts     # Discord slash-command endpoint (/scan)
   components/
     ChartPanel.tsx        # price chart + strength-colored zone lines
     VolumeProfilePanel.tsx# volume histogram (POC/VA highlighted)
@@ -61,9 +62,16 @@ client-side (auto-refresh ~30s).
   watch/break/retest purely from the current candle window, which is what makes
   it safe to run as an isolated serverless invocation.
 
+### `POST /api/discord/interactions` — slash commands
+Discord's HTTP-interactions endpoint (no always-on bot needed). Verifies the
+Ed25519 signature (`DISCORD_PUBLIC_KEY`), answers PINGs, and handles `/scan
+<symbol>` by deferring then editing in the result (`buildScanEmbed`). Register
+the command with `scripts/register-commands.mjs`. Runtime env:
+`DISCORD_PUBLIC_KEY`, `DISCORD_APP_ID`. Exempt from the auth gate.
+
 ## Auth gate (`proxy.ts`)
 
-HTTP Basic Auth on every route **except** `/api/cron/*`. Reads `SITE_USER` /
+HTTP Basic Auth on every route **except** `/api/cron/*` and `/api/discord/*`. Reads `SITE_USER` /
 `SITE_PASSWORD`. **Fail-open**: if either env var is missing, the gate is
 disabled (so a misconfig can't lock everyone out). Once a browser authenticates,
 it reuses credentials for same-origin fetches (e.g. `/api/analysis`), so the
