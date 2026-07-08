@@ -14,7 +14,8 @@ export const CONFIG = {
   pivotLookback: 3,
   clusterAtrMult: 0.6,
   zoneWidthAtr: 0.5,
-  minStrengthAlert: 55,
+  minStrengthAlert: 55, // min strength for break/retest signals
+  watchMinStrength: 70, // watch (heads-up) only for strong zones — cuts noise
 
   weights: {
     volume: 0.3,

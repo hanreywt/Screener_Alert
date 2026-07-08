@@ -110,7 +110,10 @@ export function evaluate(
           detail: `${z.kind.toUpperCase()} broken ${rb.dir > 0 ? "UP" : "DOWN"} on ${(last.volume / avg).toFixed(1)}x vol → flips to ${flip}`,
           breakRating: rb.rating,
         });
-      } else {
+      } else if (z.strength >= CONFIG.watchMinStrength) {
+        // Watch is a heads-up, not a trade — only surface it for the
+        // strongest zones to keep the channel quiet. Break/retest below still
+        // fire for any zone >= minStrengthAlert.
         out.push({
           symbol,
           kind: "watch",

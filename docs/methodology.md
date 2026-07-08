@@ -41,7 +41,9 @@ Built from the structural timeframe (default 1h × 500 candles):
 
 Evaluated on the trigger timeframe (default 5m × 120) for strong zones near price.
 
-- **👀 watch** — price is within `PROXIMITY_ATR × ATR` of a strong zone. Heads-up.
+- **👀 watch** — price is within `PROXIMITY_ATR × ATR` of a zone whose strength
+  is ≥ `watchMinStrength` (web default 70, higher than break/retest's 55 to keep
+  the channel quiet — watch is a heads-up, not a trade).
 - **💥 break** — the latest trigger candle closes through a zone by
   `≥ BREAK_ATR_MULT × ATR` on `≥ BREAK_VOL_MULT ×` average volume. The zone gets
   a **Break Rating (0–100)** = blend of volume expansion + decisiveness of the

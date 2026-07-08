@@ -18,7 +18,8 @@ Single source of truth for every tunable knob and env var. Two config files
 | `PIVOT_LOOKBACK` / `pivotLookback` | 3 | fractal strength (bars each side) |
 | `CLUSTER_ATR_MULT` / `clusterAtrMult` | 0.6 | pivot merge distance (× ATR) |
 | `ZONE_WIDTH_ATR` / `zoneWidthAtr` | 0.5 | zone half-width (× ATR) |
-| `MIN_STRENGTH_ALERT` / `minStrengthAlert` | 55 | min zone strength to alert |
+| `MIN_STRENGTH_ALERT` / `minStrengthAlert` | 55 | min zone strength for break/retest signals |
+| `watchMinStrength` (ts only) | 70 | min zone strength for **watch** heads-ups (higher = quieter) |
 | `WEIGHTS` / `weights` | see below | composite score weights (sum = 1.0) |
 | `BREAK_VOL_MULT` / `breakVolMult` | 1.5 | breakout volume vs avg |
 | `BREAK_ATR_MULT` / `breakAtrMult` | 0.25 | close-through distance (× ATR) |
