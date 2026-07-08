@@ -34,6 +34,9 @@ export function signalEmbed(s: Signal) {
     { name: "Zone", value: `${s.zonePrice} (${s.zoneKind})`, inline: true },
     { name: "Strength", value: `${s.strength}/100 ${bar(s.strength)}`, inline: true },
   ];
+  if (s.regime) {
+    fields.push({ name: "Regime", value: s.regime, inline: true });
+  }
   if (s.kind === "break" && s.breakRating != null) {
     fields.push({ name: "Break rating", value: `${s.breakRating}/100`, inline: true });
   }

@@ -34,6 +34,8 @@ export interface Zone {
   };
 }
 
+export type Regime = "trend_up" | "trend_down" | "range";
+
 export type SignalKind = "watch" | "break" | "retest";
 
 export interface Signal {
@@ -50,12 +52,15 @@ export interface Signal {
   target?: number;
   rr?: number;
   winrateNote?: string;
+  regime?: Regime;
 }
 
 export interface Analysis {
   symbol: string;
   price: number;
   atr: number;
+  regime: Regime;
+  regimeEr: number; // Kaufman efficiency ratio 0..1 (trend cleanliness)
   updatedAt: number;
   candles: Candle[];
   profile: VolumeProfile;

@@ -53,6 +53,25 @@ Evaluated on the trigger timeframe (default 5m × 120) for strong zones near pri
   target / R:R**. Rule of thumb: only take if **R:R ≥ 1.5**. This is the
   highest-winrate structure (~60–70% in trending crypto).
 
+## Regime filter (web only)
+
+`web/src/lib/regime.ts`. Before emitting trade signals, classify the
+higher-timeframe regime with **Kaufman's Efficiency Ratio** on the structural
+timeframe:
+
+`ER = |net change over N| / Σ|bar-to-bar change|` → 1 = clean trend, 0 = chop.
+
+- `ER ≥ regimeMinEr` (0.3) → **trend_up / trend_down** (by net direction); else **range**.
+- **Gating** (in `signals.ts`):
+  - **retest** (break-and-retest is trend-following) fires *only* when the trade
+    direction matches the trend — never in a range or counter-trend. This is the
+    biggest live-vs-backtest gap-closer.
+  - **break** fires when aligned with the trend, and is *also* allowed in a range
+    (a range breakout is a valid trend start), but not counter-trend.
+  - **watch** is informational — always allowed, just tagged with the regime.
+- Every signal carries its `regime`, shown in the Discord embed and `/scan` card.
+- `regimeMinEr` is a deliberate knob — validate it in a backtest.
+
 ## Round-number level alerts (web only)
 
 `web/src/lib/roundLevels.ts`. Independent of zones. Alerts when a symbol

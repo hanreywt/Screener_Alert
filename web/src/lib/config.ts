@@ -29,6 +29,10 @@ export const CONFIG = {
   breakAtrMult: 0.25,
   retestTolAtr: 0.4,
   proximityAtr: 0.8,
+
+  // Regime filter (Kaufman efficiency ratio on the structural timeframe).
+  regimeLookback: 20, // bars for the net-vs-path measure
+  regimeMinEr: 0.3, // >= this = trending; below = range/chop
 };
 
 // Round-number ("psychological") price levels to alert on when crossed.

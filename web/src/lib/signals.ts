@@ -1,5 +1,5 @@
 import { CONFIG } from "./config";
-import type { Candle, Signal, Zone } from "./types";
+import type { Candle, Regime, Signal, Zone } from "./types";
 
 function avgVol(candles: Candle[], n = 20): number {
   const s = candles.slice(-n);
@@ -85,6 +85,7 @@ export function evaluate(
   zones: Zone[],
   trig: Candle[],
   atr: number,
+  regime: Regime,
 ): Signal[] {
   const out: Signal[] = [];
   const strong = zones.filter((z) => z.strength >= CONFIG.minStrengthAlert);
@@ -92,13 +93,21 @@ export function evaluate(
   const last = trig[trig.length - 1];
   const r = (n: number) => Math.round(n * 1e6) / 1e6;
 
+  // A directional signal is "with trend" if it agrees with the regime.
+  // In a range, breakouts are allowed (range breakout is a valid start of a
+  // trend) but retests are not (they get chopped up).
+  const breakAligned = (dir: number) =>
+    dir > 0 ? regime !== "trend_down" : regime !== "trend_up";
+  const retestAligned = (dir: number) =>
+    dir > 0 ? regime === "trend_up" : regime === "trend_down";
+
   for (const z of strong) {
     const dist = Math.abs(price - z.price);
     const near = (price >= z.lo && price <= z.hi) || dist <= CONFIG.proximityAtr * atr;
 
     if (near) {
       const rb = rateBreak(last, avg, z, atr);
-      if (rb.broke) {
+      if (rb.broke && breakAligned(rb.dir)) {
         const flip = rb.dir > 0 ? "support" : "resistance";
         out.push({
           symbol,
@@ -107,10 +116,11 @@ export function evaluate(
           zoneKind: z.kind,
           strength: z.strength,
           price: r(price),
-          detail: `${z.kind.toUpperCase()} broken ${rb.dir > 0 ? "UP" : "DOWN"} on ${(last.volume / avg).toFixed(1)}x vol → flips to ${flip}`,
+          detail: `${z.kind.toUpperCase()} broken ${rb.dir > 0 ? "UP" : "DOWN"} on ${(last.volume / avg).toFixed(1)}x vol → flips to ${flip} [${regime}]`,
           breakRating: rb.rating,
+          regime,
         });
-      } else if (z.strength >= CONFIG.watchMinStrength) {
+      } else if (!rb.broke && z.strength >= CONFIG.watchMinStrength) {
         // Watch is a heads-up, not a trade — only surface it for the
         // strongest zones to keep the channel quiet. Break/retest below still
         // fire for any zone >= minStrengthAlert.
@@ -121,18 +131,21 @@ export function evaluate(
           zoneKind: z.kind,
           strength: z.strength,
           price: r(price),
-          detail: `Price ${(dist / atr).toFixed(2)} ATR from ${z.kind} (strength ${z.strength}) — watch for reaction`,
+          detail: `Price ${(dist / atr).toFixed(2)} ATR from ${z.kind} (strength ${z.strength}) — watch for reaction [${regime}]`,
+          regime,
         });
       }
     }
 
-    // Break-and-retest: a recent decisive break, and price is back at the zone.
+    // Break-and-retest: a recent decisive break, price back at the zone, AND
+    // the trade agrees with the regime (trend-following only, no chop).
     if (dist <= CONFIG.retestTolAtr * atr) {
       const rbk = recentBreak(trig, z, atr);
-      if (rbk && rbk.idx < trig.length - 1) {
+      if (rbk && rbk.idx < trig.length - 1 && retestAligned(rbk.dir)) {
         const sig = buildRetest(symbol, price, z, zones, atr, rbk.dir);
         if (sig) {
           sig.breakRating = rbk.rating;
+          sig.regime = regime;
           out.push(sig);
         }
       }

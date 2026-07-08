@@ -53,9 +53,12 @@ export async function buildScanEmbed(symbol: Symbol) {
           .join("\n")
       : "_none right now_";
 
+  const regimeIcon =
+    a.regime === "trend_up" ? "📈" : a.regime === "trend_down" ? "📉" : "↔️";
+
   return {
     title: `📊 ${symbol} — ${fmt(a.price)}`,
-    description: `ATR ${fmt(a.atr)} · POC ${fmt(a.profile.poc)} · Value ${fmt(a.profile.val)}–${fmt(a.profile.vah)}`,
+    description: `${regimeIcon} regime **${a.regime}** (ER ${a.regimeEr}) · ATR ${fmt(a.atr)} · POC ${fmt(a.profile.poc)} · Value ${fmt(a.profile.val)}–${fmt(a.profile.vah)}`,
     color: 0x5865f2,
     fields: [
       { name: "Range we're watching", value: rangeLine, inline: false },

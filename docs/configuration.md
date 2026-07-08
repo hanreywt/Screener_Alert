@@ -25,6 +25,8 @@ Single source of truth for every tunable knob and env var. Two config files
 | `BREAK_ATR_MULT` / `breakAtrMult` | 0.25 | close-through distance (× ATR) |
 | `RETEST_TOL_ATR` / `retestTolAtr` | 0.4 | retest proximity (× ATR) |
 | `PROXIMITY_ATR` / `proximityAtr` | 0.8 | "watch" proximity (× ATR) |
+| `regimeLookback` (ts only) | 20 | bars for the efficiency-ratio regime measure |
+| `regimeMinEr` (ts only) | 0.3 | efficiency ratio ≥ this = trending, else range |
 | `POLL_SECONDS` (py only) | 30 | loop cadence |
 | `ROUND_STEP` (ts only) | `{ BTCUSDT: 1000 }` | round-level step per symbol |
 | `ROUND_HYSTERESIS` (ts only) | 0.03 | fraction of step price must clear to confirm a cross (anti-flap) |
