@@ -68,3 +68,18 @@ are injected automatically.
 
 The Discord embed formatting lives in `src/lib/discord.ts`; dedupe in
 `src/lib/dedupe.ts`; the endpoint in `src/app/api/cron/alert/route.ts`.
+
+### Round-number level alerts
+
+`src/lib/roundLevels.ts` also fires an alert whenever a symbol **crosses a
+psychological round level** (up or down), using Redis to remember the last
+level across serverless runs. Configure step sizes in `src/lib/config.ts`:
+
+```ts
+export const ROUND_STEP: Partial<Record<Symbol, number>> = {
+  BTCUSDT: 1000, // alert every $1,000 (62k, 63k, ...)
+  // ETHUSDT: 100, SOLUSDT: 5, ONDOUSDT: 0.05,  // uncomment to enable
+};
+```
+
+Same level+direction is de-duped for 15 min to suppress chop around a line.
