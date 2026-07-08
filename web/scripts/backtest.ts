@@ -1,15 +1,15 @@
 /**
- * Backtest the S/R break-and-retest strategy over historical Binance data,
- * reusing the EXACT live logic in src/lib (zones, regime, signals) so there is
- * no logic drift. Look-ahead-safe: at each step the analysis only sees candles
- * that had closed by then.
+ * Research backtest for the S/R break-and-retest strategy. Reuses the EXACT
+ * live logic in src/lib (zones, regime, signals) — no drift — and is
+ * look-ahead-safe (each step only sees closed candles).
  *
- *   MONTHS=3 node --import tsx scripts/backtest.ts
- *   MONTHS=6 SYMBOLS=BTCUSDT,ETHUSDT node --import tsx scripts/backtest.ts
+ *   MONTHS=3 npx tsx scripts/backtest.ts
+ *   MONTHS=6 SYMBOLS=BTCUSDT,ETHUSDT npx tsx scripts/backtest.ts
  *
- * Costs: taker fee + slippage applied round-trip. Reports trades, win rate,
- * expectancy (R), profit factor, and max drawdown — with the regime filter ON
- * and OFF for comparison.
+ * Separates ENTRY generation (regime-gated retest signals) from EXIT simulation
+ * so we can sweep exit rules against the same entries. Reports, net of
+ * fees+slippage: trades, win rate, expectancy (R), profit factor, max drawdown,
+ * and MFE/MAE to diagnose where the edge leaks.
  */
 import { CONFIG, SYMBOLS as ALL_SYMBOLS, BINANCE_HOSTS } from "../src/lib/config";
 import { atr as calcAtr } from "../src/lib/binance";
@@ -21,25 +21,23 @@ import type { Candle } from "../src/lib/types";
 
 const MONTHS = Number(process.env.MONTHS ?? 3);
 const SYMBOLS = (process.env.SYMBOLS?.split(",") ?? ALL_SYMBOLS) as string[];
-const FEE_RT = 0.001; // 0.1% round-trip taker fee
-const SLIP_RT = 0.0004; // 0.04% round-trip slippage
-const TIMEOUT_BARS = 96; // exit a trade after this many trigger candles (~8h on 5m)
-
+const FEE_RT = 0.001;
+const SLIP_RT = 0.0004;
+const COST_RT = FEE_RT + SLIP_RT;
+const TIMEOUT_BARS = 96; // ~8h on 5m
 const TF_MS: Record<string, number> = { "1m": 6e4, "5m": 3e5, "15m": 9e5, "1h": 36e5, "4h": 144e5, "1d": 864e5 };
 
 interface Raw { openMs: number; closeMs: number; open: number; high: number; low: number; close: number; volume: number; }
 
 async function fetchKlines(symbol: string, interval: string, startMs: number, endMs: number): Promise<Raw[]> {
-  const host = BINANCE_HOSTS[2]; // data-api.binance.vision — reliable for history
+  const host = BINANCE_HOSTS[2];
   const out: Raw[] = [];
   let cur = startMs;
   while (cur < endMs) {
     const url = `${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&startTime=${cur}&limit=1000`;
     const rows = (await fetch(url).then((r) => r.json())) as number[][];
     if (!Array.isArray(rows) || rows.length === 0) break;
-    for (const k of rows) {
-      out.push({ openMs: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5], closeMs: k[6] });
-    }
+    for (const k of rows) out.push({ openMs: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5], closeMs: k[6] });
     cur = rows[rows.length - 1][6] + 1;
     if (rows.length < 1000) break;
   }
@@ -48,12 +46,13 @@ async function fetchKlines(symbol: string, interval: string, startMs: number, en
 
 const toCandle = (r: Raw): Candle => ({ time: Math.floor(r.openMs / 1000), open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume });
 
-interface Trade { entry: number; stop: number; target: number; dir: 1 | -1; risk: number; openIdx: number; }
-interface Result { R: number; outcome: string; }
+interface Entry { entry: number; stop: number; target: number; dir: 1 | -1; risk: number; openIdx: number; }
 
-function runSymbol(struct: Raw[], trig: Raw[], enforceRegime: boolean): Result[] {
-  const results: Result[] = [];
-  const open = new Map<string, Trade>();
+/** Generate retest entries (independent of exit rule). Cooldown de-dupes the
+ *  same zone re-firing on consecutive candles. */
+function collectEntries(struct: Raw[], trig: Raw[], enforceRegime: boolean): Entry[] {
+  const entries: Entry[] = [];
+  const lastOpenOnZone = new Map<string, number>();
   let sIdx = 0;
   let zones: ReturnType<typeof detectZones> = [];
   let atrVal = 0;
@@ -61,94 +60,137 @@ function runSymbol(struct: Raw[], trig: Raw[], enforceRegime: boolean): Result[]
 
   for (let i = 0; i < trig.length; i++) {
     const tc = trig[i];
-
     let rebuilt = false;
     while (sIdx < struct.length && struct[sIdx].closeMs <= tc.openMs) { sIdx++; rebuilt = true; }
-    if (sIdx < CONFIG.structLookback) continue; // warm-up: need full structural window
+    if (sIdx < CONFIG.structLookback) continue;
     if (rebuilt) {
       const sw = struct.slice(sIdx - CONFIG.structLookback, sIdx).map(toCandle);
       atrVal = calcAtr(sw);
-      const profile = buildProfile(sw);
-      zones = detectZones(sw, profile, atrVal, tc.open);
+      zones = detectZones(sw, buildProfile(sw), atrVal, tc.open);
       regime = classifyRegime(sw, CONFIG.regimeLookback, CONFIG.regimeMinEr).regime;
     }
-
-    // 1) Manage open trades against this candle's range.
-    for (const [key, t] of open) {
-      const hitStop = t.dir > 0 ? tc.low <= t.stop : tc.high >= t.stop;
-      const hitTgt = t.dir > 0 ? tc.high >= t.target : tc.low <= t.target;
-      let exit: number | null = null;
-      let outcome = "";
-      if (hitStop) { exit = t.stop; outcome = "loss"; } // conservative: stop before target
-      else if (hitTgt) { exit = t.target; outcome = "win"; }
-      else if (i - t.openIdx >= TIMEOUT_BARS) { exit = tc.close; outcome = "timeout"; }
-      if (exit != null) {
-        const gross = (exit - t.entry) * t.dir;
-        const cost = t.entry * (FEE_RT + SLIP_RT);
-        results.push({ R: (gross - cost) / t.risk, outcome });
-        open.delete(key);
-      }
-    }
-
-    // 2) Generate signals at this candle's close; open new retest trades.
     const trigWin = trig.slice(Math.max(0, i - CONFIG.triggerLookback + 1), i + 1).map(toCandle);
-    const sigs = evaluate("BT", tc.close, zones, trigWin, atrVal, regime, enforceRegime);
-    for (const s of sigs) {
+    for (const s of evaluate("BT", tc.close, zones, trigWin, atrVal, regime, enforceRegime)) {
       if (s.kind !== "retest" || s.entry == null || s.stop == null || s.target == null) continue;
-      const key = `${s.zonePrice}`;
-      if (open.has(key)) continue;
+      const zoneKey = `${s.zonePrice}`;
+      if (i - (lastOpenOnZone.get(zoneKey) ?? -1e9) < TIMEOUT_BARS) continue; // cooldown
       const dir: 1 | -1 = s.target > s.entry ? 1 : -1;
       const risk = Math.abs(s.entry - s.stop);
       if (risk <= 0) continue;
-      open.set(key, { entry: s.entry, stop: s.stop, target: s.target, dir, risk, openIdx: i });
+      lastOpenOnZone.set(zoneKey, i);
+      entries.push({ entry: s.entry, stop: s.stop, target: s.target, dir, risk, openIdx: i });
     }
   }
-  return results;
+  return entries;
 }
 
-function report(label: string, all: Result[]) {
+type Fill = "pessimistic" | "realistic";
+interface ExitRule { name: string; targetR?: number; breakevenAt?: number; } // targetR undefined = use zone target
+
+interface Res { R: number; outcome: string; mfe: number; mae: number; }
+
+function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Res[] {
+  const out: Res[] = [];
+  for (const e of entries) {
+    const target = rule.targetR != null ? e.entry + e.dir * rule.targetR * e.risk : e.target;
+    let stop = e.stop;
+    let mfe = 0, mae = 0;
+    let done = false;
+    for (let j = e.openIdx + 1; j < trig.length && j <= e.openIdx + TIMEOUT_BARS; j++) {
+      const c = trig[j];
+      const favExtreme = ((e.dir > 0 ? c.high : c.low) - e.entry) * e.dir / e.risk;
+      const advExtreme = ((e.dir > 0 ? c.low : c.high) - e.entry) * e.dir / e.risk;
+      mfe = Math.max(mfe, favExtreme);
+      mae = Math.min(mae, advExtreme);
+      if (rule.breakevenAt != null && mfe >= rule.breakevenAt) stop = e.entry;
+
+      const hitStop = e.dir > 0 ? c.low <= stop : c.high >= stop;
+      const hitTgt = e.dir > 0 ? c.high >= target : c.low <= target;
+      let barrier: "stop" | "target" | null = null;
+      if (hitStop && hitTgt) {
+        if (fill === "pessimistic") barrier = "stop";
+        else barrier = Math.abs(c.open - stop) <= Math.abs(c.open - target) ? "stop" : "target"; // nearer open first
+      } else if (hitStop) barrier = "stop";
+      else if (hitTgt) barrier = "target";
+
+      if (barrier) {
+        const exit = barrier === "stop" ? stop : target;
+        out.push({ R: ((exit - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: barrier === "target" ? "win" : "loss", mfe, mae });
+        done = true;
+        break;
+      }
+    }
+    if (!done) {
+      const last = trig[Math.min(e.openIdx + TIMEOUT_BARS, trig.length - 1)];
+      out.push({ R: ((last.close - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: "timeout", mfe, mae });
+    }
+  }
+  return out;
+}
+
+function stats(all: Res[]) {
   const n = all.length;
-  if (n === 0) { console.log(`\n${label}: no trades`); return; }
+  if (n === 0) return null;
   const wins = all.filter((r) => r.outcome === "win").length;
   const losses = all.filter((r) => r.outcome === "loss").length;
-  const timeouts = all.filter((r) => r.outcome === "timeout").length;
   const sumR = all.reduce((a, r) => a + r.R, 0);
-  const grossWin = all.filter((r) => r.R > 0).reduce((a, r) => a + r.R, 0);
-  const grossLoss = Math.abs(all.filter((r) => r.R < 0).reduce((a, r) => a + r.R, 0));
-  // max drawdown on the R equity curve
-  let peak = 0, eq = 0, maxDD = 0;
-  for (const r of all) { eq += r.R; peak = Math.max(peak, eq); maxDD = Math.min(maxDD, eq - peak); }
-  console.log(`\n${label}`);
-  console.log(`  trades ${n}  |  win ${wins}  loss ${losses}  timeout ${timeouts}`);
-  console.log(`  win rate      ${((wins / (wins + losses || 1)) * 100).toFixed(1)}%  (excl. timeouts)`);
-  console.log(`  expectancy    ${(sumR / n).toFixed(3)} R / trade`);
-  console.log(`  total         ${sumR.toFixed(1)} R`);
-  console.log(`  profit factor ${grossLoss > 0 ? (grossWin / grossLoss).toFixed(2) : "∞"}`);
-  console.log(`  max drawdown  ${maxDD.toFixed(1)} R`);
+  const gW = all.filter((r) => r.R > 0).reduce((a, r) => a + r.R, 0);
+  const gL = Math.abs(all.filter((r) => r.R < 0).reduce((a, r) => a + r.R, 0));
+  let peak = 0, eq = 0, dd = 0;
+  for (const r of all) { eq += r.R; peak = Math.max(peak, eq); dd = Math.min(dd, eq - peak); }
+  const avgMfe = all.reduce((a, r) => a + r.mfe, 0) / n;
+  const reached1R = all.filter((r) => r.mfe >= 1).length / n;
+  return { n, wins, losses, winRate: (wins / (wins + losses || 1)) * 100, exp: sumR / n, pf: gL > 0 ? gW / gL : Infinity, dd, avgMfe, reached1R };
+}
+
+function line(label: string, s: ReturnType<typeof stats>) {
+  if (!s) { console.log(`  ${label.padEnd(22)} no trades`); return; }
+  console.log(`  ${label.padEnd(22)} n=${String(s.n).padStart(4)}  win ${s.winRate.toFixed(0).padStart(3)}%  exp ${s.exp >= 0 ? "+" : ""}${s.exp.toFixed(3)}R  PF ${s.pf.toFixed(2)}  DD ${s.dd.toFixed(0)}R`);
 }
 
 async function main() {
   const end = Date.now();
   const start = end - MONTHS * 30 * 864e5;
   const structStart = start - CONFIG.structLookback * TF_MS[CONFIG.structTf];
-  console.log(`Backtest: ${SYMBOLS.join(", ")} · ${MONTHS}mo · struct ${CONFIG.structTf} / trigger ${CONFIG.triggerTf} · fee+slip ${((FEE_RT + SLIP_RT) * 100).toFixed(2)}%`);
+  console.log(`Backtest ${SYMBOLS.join(",")} · ${MONTHS}mo · ${CONFIG.structTf}/${CONFIG.triggerTf} · cost ${(COST_RT * 100).toFixed(2)}%/rt\n`);
 
-  const onAll: Result[] = [];
-  const offAll: Result[] = [];
+  // Fetch once per symbol; collect regime ON/OFF entries; keep trig for exits.
+  const trigBySym: Record<string, Raw[]> = {};
+  const cache: Record<string, Entry[]> = {};
   for (const sym of SYMBOLS) {
-    process.stdout.write(`  fetching ${sym}… `);
+    process.stdout.write(`fetching ${sym}… `);
     const [struct, trig] = await Promise.all([
       fetchKlines(sym, CONFIG.structTf, structStart, end),
       fetchKlines(sym, CONFIG.triggerTf, start, end),
     ]);
     console.log(`struct ${struct.length}, trigger ${trig.length}`);
-    onAll.push(...runSymbol(struct, trig, true));
-    offAll.push(...runSymbol(struct, trig, false));
+    trigBySym[sym] = trig;
+    cache[`${sym}:true`] = collectEntries(struct, trig, true);
+    cache[`${sym}:false`] = collectEntries(struct, trig, false);
   }
 
-  report("REGIME FILTER ON (live behavior)", onAll);
-  report("REGIME FILTER OFF (baseline)", offAll);
-  console.log("\nNote: net of fees+slippage. Stop-before-target on same-bar touches (conservative).");
+  const gather = (enforceRegime: boolean, rule: ExitRule, fill: Fill): Res[] => {
+    const res: Res[] = [];
+    for (const sym of SYMBOLS) res.push(...simulate(cache[`${sym}:${enforceRegime}`], trigBySym[sym], rule, fill));
+    return res;
+  };
+
+  console.log(`\nFILL MODEL (regime ON, zone target)`);
+  line("pessimistic (stop 1st)", stats(gather(true, { name: "zone" }, "pessimistic")));
+  line("realistic (open-dist)", stats(gather(true, { name: "zone" }, "realistic")));
+
+  console.log(`\nREGIME FILTER (zone target, realistic)`);
+  line("ON", stats(gather(true, { name: "zone" }, "realistic")));
+  line("OFF", stats(gather(false, { name: "zone" }, "realistic")));
+
+  console.log(`\nEXIT SWEEP (regime ON, realistic)`);
+  line("zone target", stats(gather(true, { name: "zone" }, "realistic")));
+  for (const k of [1, 1.5, 2, 3]) line(`fixed ${k}R`, stats(gather(true, { name: "fx", targetR: k }, "realistic")));
+  line("2R + BE@1R", stats(gather(true, { name: "be", targetR: 2, breakevenAt: 1 }, "realistic")));
+
+  const diag = stats(gather(true, { name: "zone" }, "realistic"));
+  if (diag) console.log(`\nDIAGNOSIS  avg MFE ${diag.avgMfe.toFixed(2)}R · ${(diag.reached1R * 100).toFixed(0)}% of trades reached +1R before exit`);
+  console.log(`\nNet of fees+slippage. Realistic fill: same-bar touch resolved by nearer-to-open barrier.`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

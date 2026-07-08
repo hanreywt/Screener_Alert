@@ -42,32 +42,60 @@ Reports per mode: trades, win rate, expectancy (R), profit factor, max drawdown.
 - **Exit:** target / stop / timeout (`TIMEOUT_BARS`, ~8h on 5m) at MTM.
 - A short window is one specific market regime — not a full-cycle verdict.
 
-## First result (3-month, all symbols, 1h/5m) — 2026-07
+## Result (3-month, all symbols, 1h/5m) — 2026-07
 
-| | Regime ON (live) | Regime OFF |
+**Fill model** — pessimistic (stop-first) vs realistic (nearer-to-open first)
+were **identical** (−0.255 R). Same-bar double-touches are rare here, so the
+conservative assumption was *not* biasing results. The loss is real.
+
+**Regime filter** (zone target, realistic fill):
+
+| | Regime ON | Regime OFF |
 |---|---|---|
-| Trades | 365 | 2673 |
-| Win rate | 50.9% | 53.5% |
-| **Expectancy** | **−0.255 R** | **−0.176 R** |
-| Profit factor | 0.55 | 0.66 |
+| Trades | 338 | 2247 |
+| Win rate | 51% | 54% |
+| **Expectancy** | **−0.255 R** | **−0.171 R** |
+| Profit factor | 0.54 | 0.67 |
 
-**Takeaways (honest):**
-- The README's "~60–70% win rate" is **not supported** — actual ≈ 51–54%.
-- **Negative expectancy net of costs** in both modes → as configured, this is a
-  losing mechanical system. Do **not** trade it live as-is.
-- The regime filter cut trade count ~7× but did **not** improve per-trade
-  expectancy on this window — it reduces activity, not (yet) loss rate.
-- Caveat: the conservative same-bar stop-first rule drags results down; a more
-  realistic fill model and parameter work could shift this. But there's no
-  evidence of a real edge here to build on yet.
+**Exit sweep** (regime ON) — every exit rule loses:
+
+| Exit | Win% | Expectancy |
+|---|---|---|
+| zone target | 51% | −0.255 R |
+| fixed 1R | 48% | −0.234 R |
+| fixed 1.5R | 33% | −0.290 R |
+| fixed 2R | 25% | −0.294 R |
+| fixed 3R | 15% | −0.270 R |
+| 2R + breakeven@1R | 19% | −0.275 R |
+
+### 🔑 Diagnosis: it's the ENTRY, not the exit
+
+**Average MFE = 0.74 R; only 22% of trades ever reach +1R in favor before
+exiting.** Trades, on average, don't even move one risk-unit in your favor
+before reversing. No exit rule can harvest a profit the trade never reaches —
+which is exactly why every exit variant loses. **The retest entry signal has no
+predictive edge here.** Tuning exits, filters, or fills is rearranging deck
+chairs; the problem is upstream, in what the entry selects.
+
+**Conclusions:**
+- README's "60–70% win rate" is **false** — actual ≈ 51%, a coin flip.
+- **Negative expectancy net of costs**, robust across fill models, regime on/off,
+  and all exit rules. Do **not** trade this mechanically.
+- The regime filter does not add edge (slightly worse per-trade).
 
 ## Where to take it next
-1. Decompose *why* it loses: realized R vs intended R:R, timeout drag, stop
-   placement. Relax the same-bar assumption and re-check.
-2. Parameter sweeps (thresholds/weights/`regimeMinEr`) with **walk-forward** to
-   avoid curve-fitting; longer/multi-regime history.
-3. Test alternative edges: the break itself, POC/HVN mean-reversion, MTF
-   confluence — measured the same way before shipping.
-4. Meanwhile the screener is fine as a **discretionary** aid (human judgment
-   added); just don't automate trading on it until a positive-expectancy,
-   walk-forward-validated configuration exists.
+Because the diagnosis points at the **entry**, exit/filter tuning is futile.
+Real options:
+1. **Rethink the entry hypothesis** — the current retest trigger isn't
+   predictive. Candidates to test the *same rigorous way*: only the very
+   strongest zones (strength ≫ 55), multi-timeframe confluence, volume-delta
+   confirmation, or a different trigger entirely. Each is a new hypothesis — and
+   with avg MFE 0.74R the base is weak, so beware small-sample overfitting.
+2. **Test a different edge** — POC/HVN mean-reversion, or the break momentum
+   itself, measured with this same harness.
+3. **Keep it as a discretionary screener** — surfacing levels for a human to
+   judge is legitimate and unaffected by this; just don't automate trading.
+
+Caveats: 3 months is one regime; 4 highly-correlated symbols; spot-only. Longer,
+multi-cycle history could differ — but the MFE finding is structural, not a
+threshold artifact.
