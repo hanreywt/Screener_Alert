@@ -83,6 +83,29 @@ chairs; the problem is upstream, in what the entry selects.
   and all exit rules. Do **not** trade this mechanically.
 - The regime filter does not add edge (slightly worse per-trade).
 
+## Walk-forward (train/test) with risk control — 2026-07
+
+`web/scripts/research.ts`. 12 months, 67% train / 33% out-of-sample, 18-config
+grid (capped to limit multiple-testing), fixed-fractional sizing (1%/trade) with
+a 20% drawdown circuit breaker.
+
+- **Every config is negative on the training set.** The proper process (pick the
+  best config *on train*, judge it *on test*) selected `str≥55 / regime on /
+  exit 1R` → **OOS expectancy −0.152 R** over 547 unseen trades. Risk-controlled
+  equity: **−5.1%**, maxDD −20.9%, and the **drawdown circuit breaker tripped**.
+
+- **⚠️ The overfitting trap this caught:** `str≥80 / regime on` looked *positive*
+  out-of-sample (+0.06 to +0.17 R) — but it was **negative on train** (−0.22 to
+  −0.36 R) and only 60 test trades. A naive backtester would cherry-pick it and
+  blow up live; the train/test discipline correctly **refuses to select it**,
+  because you couldn't have known in advance and the sample is noise-sized. This
+  is *why* the methodology exists — it blocked a false positive.
+
+**Final verdict: no tradable mechanical edge.** 12 months (larger sample than the
+3-month run) confirms the negative expectancy, and a rigorous train/test process
+finds nothing that generalizes. Risk control contained the damage but can't
+create edge.
+
 ## Where to take it next
 Because the diagnosis points at the **entry**, exit/filter tuning is futile.
 Real options:
