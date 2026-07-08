@@ -1,4 +1,5 @@
 import type { Signal } from "./types";
+import type { LevelCross } from "./roundLevels";
 
 const ICON: Record<string, string> = {
   watch: "👀",
@@ -55,21 +56,40 @@ export function signalEmbed(s: Signal) {
   };
 }
 
-/** POST signals to the Discord channel webhook. No-op if unconfigured. */
-export async function sendDiscord(signals: Signal[]): Promise<void> {
+/** Build the Discord embed for a round-level crossing. */
+export function levelEmbed(c: LevelCross) {
+  const up = c.direction === "up";
+  const fmt = (n: number) => n.toLocaleString("en-US");
+  return {
+    title: `${up ? "🟢 ⬆️" : "🔴 ⬇️"} ${c.symbol} crossed ${fmt(c.level)} ${up ? "UP" : "DOWN"}`,
+    description: `Price ${up ? "broke above" : "dropped below"} the ${fmt(c.level)} round level — now ${fmt(c.price)}`,
+    color: up ? 0x2ecc71 : 0xe74c3c,
+  };
+}
+
+/** POST a batch of embeds to the webhook (chunked at Discord's 10/message). */
+async function postEmbeds(embeds: object[]): Promise<void> {
   const url = process.env.DISCORD_WEBHOOK_URL;
-  if (!url || signals.length === 0) return;
-  // Discord allows up to 10 embeds per message; chunk to be safe.
-  for (let i = 0; i < signals.length; i += 10) {
-    const embeds = signals.slice(i, i + 10).map(signalEmbed);
+  if (!url || embeds.length === 0) return;
+  for (let i = 0; i < embeds.length; i += 10) {
     try {
       await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ embeds }),
+        body: JSON.stringify({ embeds: embeds.slice(i, i + 10) }),
       });
     } catch {
       // never let alerting crash the cron run
     }
   }
+}
+
+/** POST zone signals to the Discord channel webhook. No-op if unconfigured. */
+export async function sendDiscord(signals: Signal[]): Promise<void> {
+  await postEmbeds(signals.map(signalEmbed));
+}
+
+/** POST round-level crossings to the Discord channel webhook. */
+export async function sendLevelCrosses(crosses: LevelCross[]): Promise<void> {
+  await postEmbeds(crosses.map(levelEmbed));
 }

@@ -30,6 +30,13 @@ export const CONFIG = {
   proximityAtr: 0.8,
 };
 
+// Round-number ("psychological") price levels to alert on when crossed.
+// Map symbol -> step size; omit a symbol to disable. BTC alerts on every
+// $1,000 (62k, 63k, ...). Add ETHUSDT: 100, SOLUSDT: 5, etc. to enable more.
+export const ROUND_STEP: Partial<Record<Symbol, number>> = {
+  BTCUSDT: 1000,
+};
+
 // Binance public REST mirrors (some regions block api.binance.com).
 export const BINANCE_HOSTS = [
   "https://api.binance.com",

@@ -1,22 +1,11 @@
-import { Redis } from "@upstash/redis";
+import { getRedis } from "./redisClient";
 import type { Signal } from "./types";
 
 // Mirrors engine.py's _SEEN de-dupe: don't re-fire an identical alert
 // (same symbol + kind + zone) within this window.
 const SEEN_TTL_SECONDS = 15 * 60;
 
-let _redis: Redis | null = null;
-function redis(): Redis | null {
-  if (_redis) return _redis;
-  // Vercel's Upstash marketplace integration provisions KV_REST_API_*;
-  // fall back to the classic UPSTASH_REDIS_REST_* names for local/manual setups.
-  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
-  const token =
-    process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null; // dedupe disabled if unconfigured
-  _redis = new Redis({ url, token });
-  return _redis;
-}
+const redis = getRedis;
 
 function keyFor(s: Signal): string {
   return `alert:${s.symbol}:${s.kind}:${s.zonePrice}`;

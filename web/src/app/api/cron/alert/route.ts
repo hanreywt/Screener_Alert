@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyze } from "@/lib/analysis";
-import { SYMBOLS } from "@/lib/config";
+import { SYMBOLS, ROUND_STEP } from "@/lib/config";
 import { filterUnseen } from "@/lib/dedupe";
-import { sendDiscord } from "@/lib/discord";
+import { sendDiscord, sendLevelCrosses } from "@/lib/discord";
+import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
 import type { Signal } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -27,18 +28,27 @@ export async function GET(req: NextRequest) {
 
   const collected: Signal[] = [];
   const errors: Record<string, string> = {};
+  const levelChecks: Promise<LevelCross[]>[] = [];
 
   const results = await Promise.allSettled(SYMBOLS.map((s) => analyze(s)));
   results.forEach((res, i) => {
+    const sym = SYMBOLS[i];
     if (res.status === "fulfilled") {
       collected.push(...res.value.signals);
+      const step = ROUND_STEP[sym];
+      if (step) levelChecks.push(checkLevelCross(sym, res.value.price, step));
     } else {
-      errors[SYMBOLS[i]] = String(res.reason);
+      errors[sym] = String(res.reason);
     }
   });
 
-  const fresh = await filterUnseen(collected);
-  await sendDiscord(fresh);
+  const [fresh, crossesNested] = await Promise.all([
+    filterUnseen(collected),
+    Promise.all(levelChecks),
+  ]);
+  const crosses = crossesNested.flat();
+
+  await Promise.all([sendDiscord(fresh), sendLevelCrosses(crosses)]);
 
   return NextResponse.json(
     {
@@ -46,6 +56,7 @@ export async function GET(req: NextRequest) {
       scanned: SYMBOLS.length,
       found: collected.length,
       sent: fresh.length,
+      crossed: crosses.length,
       errors: Object.keys(errors).length ? errors : undefined,
     },
     { headers: { "Cache-Control": "no-store" } },
