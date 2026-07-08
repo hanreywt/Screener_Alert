@@ -98,6 +98,12 @@ Server route `GET /api/analysis?symbol=BTCUSDT` returns the full analysis JSON
 The Python engine (root) and the web app are independent — Python is the
 headless CLI/Telegram alerter, the web app is the visual screener.
 
+## Documentation
+
+Full project reference lives in [`docs/`](docs/) — architecture, methodology,
+the Python engine, the web app, deployment/ops, and a configuration reference.
+**Keep it in sync when you change things.** Start at [docs/README.md](docs/README.md).
+
 ## Notes
 - Public Binance data is delayed-free but not exchange-official; treat as a
   screener, not execution truth. Position sizing and final entries are yours.
