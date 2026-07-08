@@ -1,0 +1,32 @@
+# --- Secrets / env ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Node / Next.js (web/) ---
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Runtime / logs ---
+alerts.log
+.alerts.pid
+*.log
+
+# --- Vercel ---
+.vercel
+
+# --- OS / editor ---
+.DS_Store
+*.pem
