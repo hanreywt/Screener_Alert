@@ -26,6 +26,7 @@ Single source of truth for every tunable knob and env var. Two config files
 | `PROXIMITY_ATR` / `proximityAtr` | 0.8 | "watch" proximity (× ATR) |
 | `POLL_SECONDS` (py only) | 30 | loop cadence |
 | `ROUND_STEP` (ts only) | `{ BTCUSDT: 1000 }` | round-level step per symbol |
+| `ROUND_HYSTERESIS` (ts only) | 0.03 | fraction of step price must clear to confirm a cross (anti-flap) |
 | `BINANCE_BASE` / `BINANCE_HOSTS` | Binance REST | data host(s) + mirrors |
 
 **Weights:** volume 0.30, touches 0.22, rejection 0.20, confluence 0.15,
@@ -67,5 +68,4 @@ silently no-op. If `CRON_SECRET` is absent, the endpoint is unsecured.
 | Key | TTL | Purpose |
 |---|---|---|
 | `alert:<symbol>:<kind>:<zonePrice>` | 15 min | signal de-dupe |
-| `rl:last:<symbol>` | none | last round-level bucket |
-| `rl:seen:<symbol>:<level>:<dir>` | 15 min | round-level anti-flap |
+| `rl:last:<symbol>` | none | last confirmed round-level bucket (hysteresis) |

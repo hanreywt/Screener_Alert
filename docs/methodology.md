@@ -62,9 +62,14 @@ Evaluated on the trigger timeframe (default 5m × 120) for strong zones near pri
   stored in Redis (`rl:last:<symbol>`). A change = a crossing; direction from
   the sign. Handles multi-level jumps (62.4k → 64.1k alerts 63k and 64k).
 - **First run** just sets the baseline (no alert).
-- **Anti-flap:** same `level + direction` de-duped for 15 min
-  (`rl:seen:<symbol>:<level>:<dir>`), so chop on a line doesn't spam.
-- **Pure logic** (`computeCrosses`) is unit-testable without Redis.
+- **Anti-flap via hysteresis:** a cross is only confirmed once price clears the
+  level by `ROUND_HYSTERESIS × step` (default 3% = $30 on BTC). This mutes
+  jitter right on the line while letting **every genuine re-cross alert — both
+  directions, repeated** (62k up → 62k down → 62k up all fire). Implemented in
+  `confirmBucket` (pure/testable); no time-based suppression.
+- **Sampling limit:** price is checked once per cron run, so a round-trip that
+  completes entirely between two runs isn't seen. Faster cadence narrows this.
+- **Pure logic** (`computeCrosses`, `confirmBucket`) is unit-testable without Redis.
 
 ## Important caveats
 

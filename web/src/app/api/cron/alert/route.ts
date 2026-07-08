@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyze } from "@/lib/analysis";
-import { SYMBOLS, ROUND_STEP } from "@/lib/config";
+import { SYMBOLS, ROUND_STEP, ROUND_HYSTERESIS } from "@/lib/config";
 import { filterUnseen } from "@/lib/dedupe";
 import { sendDiscord, sendLevelCrosses } from "@/lib/discord";
 import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
     if (res.status === "fulfilled") {
       collected.push(...res.value.signals);
       const step = ROUND_STEP[sym];
-      if (step) levelChecks.push(checkLevelCross(sym, res.value.price, step));
+      if (step)
+        levelChecks.push(
+          checkLevelCross(sym, res.value.price, step, step * ROUND_HYSTERESIS),
+        );
     } else {
       errors[sym] = String(res.reason);
     }

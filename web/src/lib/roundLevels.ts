@@ -7,11 +7,8 @@ export interface LevelCross {
   price: number; // current price
 }
 
-// Anti-flap: don't re-alert the same level+direction within this window.
-const SEEN_TTL_SECONDS = 15 * 60;
-
 /**
- * Pure crossing logic: given the previous and current bucket index
+ * Pure crossing logic: given the previous and current confirmed bucket index
  * (floor(price/step)), return every round level crossed between them.
  * Exported for testing.
  */
@@ -34,33 +31,56 @@ export function computeCrosses(
 }
 
 /**
- * Detect round-level crossings for one symbol using Redis to remember the
- * last bucket. First observation just sets the baseline (no alert). Repeated
- * crossings of the same level+direction are de-duped for SEEN_TTL_SECONDS to
- * suppress chop around a level.
+ * Decide the new confirmed bucket using hysteresis: only move to a new bucket
+ * once price clears the crossed boundary by `hysteresis`. Staying inside the
+ * band around a level returns the previous bucket (no cross). Pure/testable.
+ */
+export function confirmBucket(
+  prevBucket: number,
+  price: number,
+  step: number,
+  hysteresis: number,
+): number {
+  const raw = Math.floor(price / step);
+  if (raw > prevBucket && price >= (prevBucket + 1) * step + hysteresis) {
+    return raw; // cleared the upper boundary by the buffer
+  }
+  if (raw < prevBucket && price <= prevBucket * step - hysteresis) {
+    return raw; // cleared the lower boundary by the buffer
+  }
+  return prevBucket; // inside the hysteresis band — no confirmed cross
+}
+
+/**
+ * Detect round-level crossings for one symbol. Uses Redis to remember the last
+ * confirmed bucket across serverless runs. First observation sets the baseline
+ * (no alert). Every genuine cross alerts — up or down, repeated — because
+ * hysteresis (not a time window) is what suppresses on-the-line jitter.
+ *
+ * Note: price is sampled once per invocation, so a round-trip that completes
+ * entirely between two runs isn't seen. Increase the cron cadence to narrow
+ * that gap.
  */
 export async function checkLevelCross(
   symbol: string,
   price: number,
   step: number,
+  hysteresis: number,
 ): Promise<LevelCross[]> {
   const r = getRedis();
   if (!r || step <= 0 || !Number.isFinite(price)) return [];
 
-  const bucket = Math.floor(price / step);
   const key = `rl:last:${symbol}`;
   const prev = await r.get<number>(key);
-  await r.set(key, bucket);
 
-  if (prev == null) return []; // baseline set, don't alert on first run
-
-  const candidates = computeCrosses(prev, bucket, step, symbol, price);
-
-  const fresh: LevelCross[] = [];
-  for (const c of candidates) {
-    const dk = `rl:seen:${symbol}:${c.level}:${c.direction}`;
-    const set = await r.set(dk, Date.now(), { nx: true, ex: SEEN_TTL_SECONDS });
-    if (set === "OK") fresh.push(c);
+  if (prev == null) {
+    await r.set(key, Math.floor(price / step)); // baseline, don't alert
+    return [];
   }
-  return fresh;
+
+  const confirmed = confirmBucket(prev, price, step, hysteresis);
+  if (confirmed === prev) return [];
+
+  await r.set(key, confirmed);
+  return computeCrosses(prev, confirmed, step, symbol, price);
 }

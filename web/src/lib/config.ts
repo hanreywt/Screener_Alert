@@ -37,6 +37,12 @@ export const ROUND_STEP: Partial<Record<Symbol, number>> = {
   BTCUSDT: 1000,
 };
 
+// Hysteresis: fraction of the step price must clear *beyond* a level before a
+// cross is confirmed. Suppresses flapping right on the line without blocking
+// genuine re-crosses. 0.03 = 3% of the step ($30 on BTC's $1,000). Every real
+// cross (up or down, repeated) alerts; only sub-$30 jitter on the line is muted.
+export const ROUND_HYSTERESIS = 0.03;
+
 // Binance public REST mirrors (some regions block api.binance.com).
 export const BINANCE_HOSTS = [
   "https://api.binance.com",
