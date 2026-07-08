@@ -4,6 +4,7 @@ import { SYMBOLS, ROUND_STEP, ROUND_HYSTERESIS } from "@/lib/config";
 import { filterUnseen } from "@/lib/dedupe";
 import { sendDiscord, sendLevelCrosses } from "@/lib/discord";
 import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
+import { logSignals, resolveOpen } from "@/lib/journal";
 import type { Signal } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -29,12 +30,14 @@ export async function GET(req: NextRequest) {
   const collected: Signal[] = [];
   const errors: Record<string, string> = {};
   const levelChecks: Promise<LevelCross[]>[] = [];
+  const priceBySymbol: Record<string, number> = {};
 
   const results = await Promise.allSettled(SYMBOLS.map((s) => analyze(s)));
   results.forEach((res, i) => {
     const sym = SYMBOLS[i];
     if (res.status === "fulfilled") {
       collected.push(...res.value.signals);
+      priceBySymbol[sym] = res.value.price;
       const step = ROUND_STEP[sym];
       if (step)
         levelChecks.push(
@@ -50,6 +53,10 @@ export async function GET(req: NextRequest) {
     Promise.all(levelChecks),
   ]);
   const crosses = crossesNested.flat();
+
+  // Track record: resolve open paper trades vs current price, then log new ones.
+  await resolveOpen(priceBySymbol);
+  await logSignals(fresh);
 
   await Promise.all([sendDiscord(fresh), sendLevelCrosses(crosses)]);
 

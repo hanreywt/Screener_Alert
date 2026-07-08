@@ -16,6 +16,7 @@ web/src/
     api/analysis/route.ts                 # GET ?symbol= → full analysis JSON
     api/cron/alert/route.ts               # the serverless alerter (cron target)
     api/discord/interactions/route.ts     # Discord slash-command endpoint (/scan)
+    api/stats/route.ts                    # live signal track record (journal)
   components/
     ChartPanel.tsx        # price chart + strength-colored zone lines
     VolumeProfilePanel.tsx# volume histogram (POC/VA highlighted)
@@ -25,8 +26,10 @@ web/src/
     binance.ts            # klines/price/ATR with mirror failover
     volumeProfile.ts      # POC / VA / HVN / LVN
     zones.ts              # zone detection + scoring
-    signals.ts            # watch / break / retest (stateless!)
+    signals.ts            # watch / break / retest (stateless!) + regime gate
+    regime.ts             # Kaufman efficiency-ratio trend/range classifier
     analysis.ts           # orchestrates one symbol's full analysis
+    journal.ts            # forward track record of retest trades (Redis)
     roundLevels.ts        # round-number crossing detection (Redis-backed)
     dedupe.ts             # Upstash de-dupe of repeat signals
     discord.ts            # embed formatting + webhook POST

@@ -86,6 +86,7 @@ export function evaluate(
   trig: Candle[],
   atr: number,
   regime: Regime,
+  enforceRegime = true,
 ): Signal[] {
   const out: Signal[] = [];
   const strong = zones.filter((z) => z.strength >= CONFIG.minStrengthAlert);
@@ -95,11 +96,12 @@ export function evaluate(
 
   // A directional signal is "with trend" if it agrees with the regime.
   // In a range, breakouts are allowed (range breakout is a valid start of a
-  // trend) but retests are not (they get chopped up).
+  // trend) but retests are not (they get chopped up). enforceRegime=false
+  // disables the gate entirely (used by the backtest to compare on vs off).
   const breakAligned = (dir: number) =>
-    dir > 0 ? regime !== "trend_down" : regime !== "trend_up";
+    !enforceRegime || (dir > 0 ? regime !== "trend_down" : regime !== "trend_up");
   const retestAligned = (dir: number) =>
-    dir > 0 ? regime === "trend_up" : regime === "trend_down";
+    !enforceRegime || (dir > 0 ? regime === "trend_up" : regime === "trend_down");
 
   for (const z of strong) {
     const dist = Math.abs(price - z.price);
