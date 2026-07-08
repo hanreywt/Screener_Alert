@@ -8,8 +8,11 @@ const SEEN_TTL_SECONDS = 15 * 60;
 let _redis: Redis | null = null;
 function redis(): Redis | null {
   if (_redis) return _redis;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Vercel's Upstash marketplace integration provisions KV_REST_API_*;
+  // fall back to the classic UPSTASH_REDIS_REST_* names for local/manual setups.
+  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token =
+    process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null; // dedupe disabled if unconfigured
   _redis = new Redis({ url, token });
   return _redis;

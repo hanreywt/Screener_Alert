@@ -48,8 +48,8 @@ hits it on an interval instead of a `while True` loop.
 |---|---|
 | `DISCORD_WEBHOOK_URL` | Discord channel webhook (Server Settings → Integrations → Webhooks) |
 | `CRON_SECRET` | random string; callers must send `Authorization: Bearer <CRON_SECRET>` |
-| `UPSTASH_REDIS_REST_URL` | auto-added by the Upstash marketplace integration |
-| `UPSTASH_REDIS_REST_TOKEN` | auto-added by the Upstash marketplace integration |
+| `KV_REST_API_URL` | auto-added by the Upstash marketplace integration (or `UPSTASH_REDIS_REST_URL` for manual setups) |
+| `KV_REST_API_TOKEN` | auto-added by the Upstash marketplace integration (or `UPSTASH_REDIS_REST_TOKEN`) |
 
 Add the Upstash Redis store in one click: Vercel dashboard → Storage (or
 Marketplace) → Upstash → connect to this project. The two `UPSTASH_*` vars
