@@ -31,6 +31,7 @@ const command = {
         { name: "ETH", value: "ETH" },
         { name: "SOL", value: "SOL" },
         { name: "ONDO", value: "ONDO" },
+        { name: "TAO", value: "TAO" },
       ],
     },
   ],

@@ -7,7 +7,7 @@ Single source of truth for every tunable knob and env var. Two config files
 
 | Knob (py / ts) | Default | Meaning |
 |---|---|---|
-| `SYMBOLS` | BTC, ETH, SOL, ONDO (USDT) | universe to scan |
+| `SYMBOLS` | BTC, ETH, SOL, ONDO, TAO (USDT) | universe to scan |
 | `STRUCT_TF` / `structTf` | `1h` | timeframe for volume profile & zones |
 | `STRUCT_LOOKBACK` / `structLookback` | 500 | structural candles |
 | `TRIGGER_TF` / `triggerTf` | `5m` | timeframe for break/retest triggers |

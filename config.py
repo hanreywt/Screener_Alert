@@ -26,7 +26,7 @@ _load_dotenv()
 
 # --- Universe ---------------------------------------------------------------
 # Binance USDT-perp/spot symbols. ONDO trades on Binance spot as ONDOUSDT.
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ONDOUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ONDOUSDT", "TAOUSDT"]
 
 # --- Timeframes -------------------------------------------------------------
 # Zones are built on a higher timeframe (structural), triggers watched on lower.

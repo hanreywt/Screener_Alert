@@ -1,4 +1,4 @@
-export const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ONDOUSDT"] as const;
+export const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ONDOUSDT", "TAOUSDT"] as const;
 export type Symbol = (typeof SYMBOLS)[number];
 
 export const CONFIG = {

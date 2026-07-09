@@ -32,7 +32,7 @@ The web app is what runs 24/7 in the cloud; the Python engine is the local CLI.
 - **GitHub:** `hanreywt/Screener_Alert` (single repo, both apps)
 - **Live dashboard:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app` (password-gated)
 - **Vercel project:** `web` under `hanreywts-projects`
-- **Symbols:** BTCUSDT, ETHUSDT, SOLUSDT, ONDOUSDT
+- **Symbols:** BTCUSDT, ETHUSDT, SOLUSDT, ONDOUSDT, TAOUSDT
 - **Data source:** public Binance REST (no API key), with mirror failover
 - **Alert channels:** Discord webhook (primary), Telegram (optional), console
 
