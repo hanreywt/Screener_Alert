@@ -17,6 +17,21 @@ interface Trade {
   openedAt: number;
   resolvedAt: number;
 }
+interface OpenTrade {
+  symbol: string;
+  dir: number;
+  entry: number;
+  stop: number;
+  target: number;
+  rr: number;
+  riskPct: number;
+  sizeNotional: number;
+  mfe: number;
+  mae: number;
+  lastR?: number;
+  regime?: string;
+  ts: number;
+}
 interface Journal {
   fired: { watch: number; break: number; retest: number };
   trades: number;
@@ -26,10 +41,18 @@ interface Journal {
   winRate: number | null;
   expectancyR: number | null;
   recent: Trade[];
+  open: OpenTrade[];
 }
 
 const REFRESH_MS = 30_000;
 const fmtR = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}R`;
+const px = (n: number) =>
+  n.toLocaleString("en-US", { maximumFractionDigits: n < 10 ? 4 : 2 });
+const fmtAge = (ts: number) => {
+  const m = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+};
 
 export default function JournalPage() {
   const [j, setJ] = useState<Journal | null>(null);
@@ -132,10 +155,73 @@ export default function JournalPage() {
             <EquityChart points={equity.map((e) => e.cum)} />
           </section>
 
-          {/* Trades table (also the accessible data view) */}
+          {/* Running (open) trades */}
+          <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <h2 className="mb-3 text-sm font-semibold text-zinc-300">
+              Running trades{" "}
+              <span className="font-normal text-zinc-500">({j.open.length} open)</span>
+            </h2>
+            {j.open.length === 0 ? (
+              <p className="py-6 text-center text-sm text-zinc-500">
+                No open trades right now.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th className="py-2 pr-3">Symbol</th>
+                      <th className="py-2 pr-3">Side</th>
+                      <th className="py-2 pr-3 text-right">Entry</th>
+                      <th className="py-2 pr-3 text-right">Stop</th>
+                      <th className="py-2 pr-3 text-right">Target</th>
+                      <th className="py-2 pr-3 text-right">Unreal.</th>
+                      <th className="py-2 pr-3 text-right">MFE</th>
+                      <th className="py-2 pr-3 text-right">MAE</th>
+                      <th className="py-2 pr-3 text-right">R:R</th>
+                      <th className="py-2 pr-3 text-right">Size</th>
+                      <th className="py-2 pr-3">Regime</th>
+                      <th className="py-2 pr-3 text-right">Age</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono text-zinc-300">
+                    {[...j.open]
+                      .sort((a, b) => b.ts - a.ts)
+                      .map((t, i) => (
+                        <tr key={i} className="border-t border-zinc-900">
+                          <td className="py-2 pr-3 font-sans font-semibold">
+                            {t.symbol.replace("USDT", "")}
+                          </td>
+                          <td className="py-2 pr-3">{t.dir > 0 ? "LONG" : "SHORT"}</td>
+                          <td className="py-2 pr-3 text-right">{px(t.entry)}</td>
+                          <td className="py-2 pr-3 text-right text-red-400/80">{px(t.stop)}</td>
+                          <td className="py-2 pr-3 text-right text-emerald-400/80">{px(t.target)}</td>
+                          <td
+                            className={`py-2 pr-3 text-right font-semibold ${(t.lastR ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                          >
+                            {t.lastR != null ? fmtR(t.lastR) : "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-zinc-500">{t.mfe.toFixed(2)}</td>
+                          <td className="py-2 pr-3 text-right text-zinc-500">{t.mae.toFixed(2)}</td>
+                          <td className="py-2 pr-3 text-right text-zinc-400">{t.rr}</td>
+                          <td className="py-2 pr-3 text-right text-zinc-400">
+                            {t.sizeNotional != null ? `$${t.sizeNotional}` : "—"}
+                          </td>
+                          <td className="py-2 pr-3 font-sans text-zinc-400">{t.regime ?? "—"}</td>
+                          <td className="py-2 pr-3 text-right font-sans text-zinc-500">{fmtAge(t.ts)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* Resolved trades — full open→close history (also the data view) */}
           <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
             <h2 className="mb-3 text-sm font-semibold text-zinc-300">
-              Recent resolved trades
+              Closed trades{" "}
+              <span className="font-normal text-zinc-500">(history)</span>
             </h2>
             {j.recent.length === 0 ? (
               <p className="py-8 text-center text-sm text-zinc-500">
@@ -157,6 +243,7 @@ export default function JournalPage() {
                       <th className="py-2 pr-3 text-right">MFE</th>
                       <th className="py-2 pr-3 text-right">MAE</th>
                       <th className="py-2 pr-3">Regime</th>
+                      <th className="py-2 pr-3">Opened</th>
                       <th className="py-2 pr-3">Closed</th>
                     </tr>
                   </thead>
@@ -196,6 +283,14 @@ export default function JournalPage() {
                           </td>
                           <td className="py-2 pr-3 font-sans text-zinc-400">
                             {t.regime ?? "—"}
+                          </td>
+                          <td className="py-2 pr-3 font-sans text-zinc-500">
+                            {new Date(t.openedAt).toLocaleString([], {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </td>
                           <td className="py-2 pr-3 font-sans text-zinc-500">
                             {new Date(t.resolvedAt).toLocaleString([], {

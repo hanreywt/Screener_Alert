@@ -28,6 +28,8 @@ interface OpenTrade {
   rr: number; // reward:risk at entry
   riskPct: number; // stop distance as % of entry
   sizeNotional: number; // suggested position notional (journal only)
+  lastR?: number; // latest unrealized R (mark-to-market)
+  lastPrice?: number; // latest sampled price
 }
 
 export interface JournalStats {
@@ -39,6 +41,7 @@ export interface JournalStats {
   winRate: number | null;
   expectancyR: number | null;
   recent: unknown[];
+  open: unknown[]; // currently-running paper trades
 }
 
 /** Record fired signals: frequency counts + open a paper trade per retest. */
@@ -119,7 +122,9 @@ export async function resolveOpen(
     }
 
     if (!outcome) {
-      await r.set(key, JSON.stringify(t)); // persist updated mfe/mae
+      t.lastR = Math.round(favR * 100) / 100; // unrealized R for the open view
+      t.lastPrice = p;
+      await r.set(key, JSON.stringify(t)); // persist updated mfe/mae + MTM
       continue;
     }
 
@@ -162,9 +167,10 @@ export async function getStats(): Promise<JournalStats> {
       winRate: null,
       expectancyR: null,
       recent: [],
+      open: [],
     };
   }
-  const [firedW, firedB, firedR, trades, wins, losses, expired, sumR, recent] =
+  const [firedW, firedB, firedR, trades, wins, losses, expired, sumR, recent, openKeys] =
     await Promise.all([
       r.get<number>("sig:fired:watch"),
       r.get<number>("sig:fired:break"),
@@ -175,7 +181,15 @@ export async function getStats(): Promise<JournalStats> {
       r.get<number>("sig:stat:expired"),
       r.get<number>("sig:stat:sumR"),
       r.lrange("sig:recent", 0, 49),
+      r.smembers("sig:open"),
     ]);
+
+  const openRaw = openKeys.length
+    ? await Promise.all(openKeys.map((k) => r.get<string>(k)))
+    : [];
+  const open = openRaw
+    .filter((x) => x != null)
+    .map((x) => (typeof x === "string" ? JSON.parse(x) : x));
 
   const w = wins ?? 0;
   const l = losses ?? 0;
@@ -189,5 +203,6 @@ export async function getStats(): Promise<JournalStats> {
     winRate: w + l > 0 ? Math.round((w / (w + l)) * 1000) / 10 : null,
     expectancyR: n > 0 ? Math.round(((sumR ?? 0) / n) * 1000) / 1000 : null,
     recent: recent.map((x) => (typeof x === "string" ? JSON.parse(x) : x)),
+    open,
   };
 }
