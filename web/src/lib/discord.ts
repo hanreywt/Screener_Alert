@@ -27,6 +27,33 @@ interface EmbedField {
   inline: boolean;
 }
 
+/**
+ * Descriptive conviction 0-100 — how *textbook-clean* the setup is (strength +
+ * break rating + R:R). NOT a win probability; the backtest says these setups
+ * are ~coin-flip. It's a readability aid, not an edge claim.
+ */
+function convictionScore(s: Signal): number {
+  if (s.kind === "watch") return s.strength * 0.5; // heads-up only
+  if (s.kind === "break") return 0.4 * s.strength + 0.6 * (s.breakRating ?? 0);
+  if (s.kind === "retest") {
+    const rrScore = Math.min(100, ((s.rr ?? 0) / 2) * 100); // R:R 2 → 100
+    return 0.4 * s.strength + 0.3 * (s.breakRating ?? 0) + 0.3 * rrScore;
+  }
+  return s.strength;
+}
+
+/** One-glance conviction line: meter + key qualifiers. */
+function convictionLine(s: Signal): string {
+  const dots = Math.max(1, Math.min(5, Math.round(convictionScore(s) / 20)));
+  const meter = "●".repeat(dots) + "○".repeat(5 - dots);
+  const parts = [`**Conviction** ${meter}`];
+  if (s.regime) parts.push(s.regime);
+  if (s.kind === "retest" && s.rr != null) parts.push(`R:R ${s.rr}`);
+  if (s.liqNote?.includes("⬆️")) parts.push("🟪 liq ⬆️");
+  else if (s.liqNote?.includes("⬇️")) parts.push("🟧 liq ⬇️");
+  return parts.join(" · ");
+}
+
 /** Build the Discord embed payload for one signal. */
 export function signalEmbed(s: Signal) {
   const icon = ICON[s.kind] ?? "•";
@@ -56,9 +83,10 @@ export function signalEmbed(s: Signal) {
   }
   return {
     title: `${icon} ${s.symbol}  ${s.kind.toUpperCase()}  @ ${s.price}`,
-    description: s.detail,
+    description: `${convictionLine(s)}\n${s.detail}`,
     color: COLOR[s.kind] ?? 0x95a5a6,
     fields,
+    footer: { text: "Conviction = setup cleanliness, not win probability" },
   };
 }
 
