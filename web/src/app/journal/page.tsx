@@ -307,9 +307,9 @@ export default function JournalPage() {
               </div>
             )}
             <p className="mt-3 text-xs text-zinc-600">
-              Size = suggested notional risking 1% of a reference account
-              (journal only, never in alerts). Prices sampled per cron tick, so
-              single-trade R isn&apos;t an exact fill.
+              Size = suggested notional risking 1% ($100) of a $10,000 reference
+              account (journal only, never in alerts). Prices sampled per cron
+              tick, so single-trade R isn&apos;t an exact fill.
             </p>
           </section>
         </>

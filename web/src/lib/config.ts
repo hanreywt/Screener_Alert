@@ -32,7 +32,7 @@ export const CONFIG = {
   minRetestRr: 1.5, // hard gate: don't emit retests below this reward:risk
 
   // Position-size suggestion — journal only, NEVER pushed to alerts.
-  accountEquity: 1000, // reference account size for the sizing calc
+  accountEquity: 10000, // reference account size for the sizing calc
   riskPerTrade: 0.01, // fraction of equity risked per trade
 
   // Regime filter (Kaufman efficiency ratio on the structural timeframe).
