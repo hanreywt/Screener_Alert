@@ -5,6 +5,8 @@ import { filterUnseen } from "@/lib/dedupe";
 import { sendDiscord, sendLevelCrosses } from "@/lib/discord";
 import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
 import { logSignals, resolveOpen } from "@/lib/journal";
+import { fetchOiSnapshot } from "@/lib/derivatives";
+import { recordOiSample, getLiqMap, formatLiqNote } from "@/lib/liquidations";
 import type { Signal } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -48,11 +50,28 @@ export async function GET(req: NextRequest) {
     }
   });
 
+  // Derivatives: record an OI sample per symbol (accumulates the liq-map
+  // history forward), then build each symbol's liq map for context.
+  const oi = await fetchOiSnapshot(SYMBOLS);
+  await Promise.all(
+    Object.entries(oi).map(([sym, s]) => recordOiSample(sym, s.oiUsd, s.mark)),
+  );
+  const liqNoteBySymbol: Record<string, string> = {};
+  await Promise.all(
+    SYMBOLS.map(async (sym) => {
+      const price = priceBySymbol[sym];
+      if (price == null) return;
+      const note = formatLiqNote(await getLiqMap(sym, price));
+      if (note) liqNoteBySymbol[sym] = note;
+    }),
+  );
+
   const [fresh, crossesNested] = await Promise.all([
     filterUnseen(collected),
     Promise.all(levelChecks),
   ]);
   const crosses = crossesNested.flat();
+  for (const s of fresh) s.liqNote = liqNoteBySymbol[s.symbol];
 
   // Track record: resolve open paper trades vs current price, then log new ones.
   await resolveOpen(priceBySymbol);

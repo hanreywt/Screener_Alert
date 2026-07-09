@@ -53,6 +53,7 @@ export interface Signal {
   rr?: number;
   winrateNote?: string;
   regime?: Regime;
+  liqNote?: string; // liquidation-cluster context (informational, no score weight)
 }
 
 export interface Analysis {

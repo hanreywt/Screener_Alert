@@ -30,6 +30,8 @@ web/src/
     regime.ts             # Kaufman efficiency-ratio trend/range classifier
     analysis.ts           # orchestrates one symbol's full analysis
     journal.ts            # forward track record of retest trades (Redis)
+    derivatives.ts        # OI + funding + mark from Hyperliquid (one call)
+    liquidations.ts       # estimated liq clusters (forward-accumulated, Redis)
     roundLevels.ts        # round-number crossing detection (Redis-backed)
     dedupe.ts             # Upstash de-dupe of repeat signals
     discord.ts            # embed formatting + webhook POST

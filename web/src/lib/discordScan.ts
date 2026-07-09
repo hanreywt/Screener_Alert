@@ -1,5 +1,7 @@
 import { analyze } from "./analysis";
 import { CONFIG, SYMBOLS, type Symbol } from "./config";
+import { getLiqMap } from "./liquidations";
+import { fetchOiSnapshot } from "./derivatives";
 
 /** Normalize user input ("btc", "eth") to a full symbol ("BTCUSDT"). */
 export function normalizeSymbol(input: string): Symbol | null {
@@ -56,13 +58,31 @@ export async function buildScanEmbed(symbol: Symbol) {
   const regimeIcon =
     a.regime === "trend_up" ? "📈" : a.regime === "trend_down" ? "📉" : "↔️";
 
+  // Derivatives context (funding + estimated liquidation clusters).
+  const [liq, oi] = await Promise.all([
+    getLiqMap(symbol, a.price),
+    fetchOiSnapshot([symbol]),
+  ]);
+  const funding = oi[symbol]?.funding;
+  const fundingTxt =
+    funding != null ? ` · funding ${(funding * 100).toFixed(4)}%` : "";
+  const usd = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${(n / 1e6).toFixed(0)}M`);
+  const liqLine =
+    liq.clusters.length > 0
+      ? liq.clusters
+          .slice(0, 4)
+          .map((c) => `${c.side === "short" ? "🟪 ⬆️" : "🟧 ⬇️"} ${fmt(c.price)} (${usd(c.notionalUsd)})`)
+          .join("\n") + `\n_bias ${liq.bias > 0 ? "+" : ""}${liq.bias} · est., not a hold signal_`
+      : `_warming up (${liq.samples} OI samples)_`;
+
   return {
     title: `📊 ${symbol} — ${fmt(a.price)}`,
-    description: `${regimeIcon} regime **${a.regime}** (ER ${a.regimeEr}) · ATR ${fmt(a.atr)} · POC ${fmt(a.profile.poc)} · Value ${fmt(a.profile.val)}–${fmt(a.profile.vah)}`,
+    description: `${regimeIcon} regime **${a.regime}** (ER ${a.regimeEr})${fundingTxt} · ATR ${fmt(a.atr)} · POC ${fmt(a.profile.poc)} · Value ${fmt(a.profile.val)}–${fmt(a.profile.vah)}`,
     color: 0x5865f2,
     fields: [
       { name: "Range we're watching", value: rangeLine, inline: false },
       { name: "Top zones (strength)", value: topZones, inline: false },
+      { name: "Liquidation magnets (est.)", value: liqLine, inline: false },
       { name: "Live signals", value: signalsLine, inline: false },
     ],
     footer: { text: `struct ${CONFIG.structTf} · trigger ${CONFIG.triggerTf}` },

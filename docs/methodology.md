@@ -92,6 +92,27 @@ timeframe:
   completes entirely between two runs isn't seen. Faster cadence narrows this.
 - **Pure logic** (`computeCrosses`, `confirmBucket`) is unit-testable without Redis.
 
+## Liquidation clusters (web only, v1 — context, not score)
+
+`src/lib/derivatives.ts` + `liquidations.ts`. Estimates where leveraged
+positions get force-liquidated (magnets / break-fuel, **not** hold-strength).
+
+- **Source:** Hyperliquid `metaAndAssetCtxs` (one call → OI + funding + mark for
+  all symbols). Binance/Bybit futures are geo-blocked from Vercel (US); OKX &
+  Hyperliquid are reachable — HL chosen for one-call coverage.
+- **Model:** each *increase* in OI → new notional assumed opened at that price,
+  split 50/50 long/short across leverage buckets {10×,25×,50×,100×}; a position
+  at P, leverage L liquidates at P·(1∓1/L). Accumulate into price bins → clusters.
+  `estimateLiquidations` is pure/tested.
+- **Forward-only:** free sources give *current* OI, not history — so the cron
+  records an OI sample each tick (`oi:hist:<symbol>` in Redis) and the map builds
+  up over days. **There is no historical backtest for this feature.**
+- **Usage (deliberately minimal):** surfaced as **context only** — a `Liquidity`
+  line on alerts and a "Liquidation magnets" panel in `/scan`, plus a directional
+  `bias`. **Zero weight in zone strength** (liq is break-fuel, not hold, *and*
+  it's unvalidated — we won't fold an unbacktestable signal into scoring).
+  Target/break-bias mechanics wait until forward data + the journal justify them.
+
 ## Important caveats
 
 - Public Binance data is delay-free but not exchange-official — treat as a

@@ -72,3 +72,4 @@ silently no-op. If `CRON_SECRET` is absent, the endpoint is unsecured.
 |---|---|---|
 | `alert:<symbol>:<kind>:<zonePrice>` | 15 min | signal de-dupe |
 | `rl:last:<symbol>` | none | last confirmed round-level bucket (hysteresis) |
+| `oi:hist:<symbol>` | capped 3000 | accumulated OI samples for the liq map (forward-only) |

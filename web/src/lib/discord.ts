@@ -37,6 +37,9 @@ export function signalEmbed(s: Signal) {
   if (s.regime) {
     fields.push({ name: "Regime", value: s.regime, inline: true });
   }
+  if (s.liqNote) {
+    fields.push({ name: "Liquidity", value: s.liqNote, inline: false });
+  }
   if (s.kind === "break" && s.breakRating != null) {
     fields.push({ name: "Break rating", value: `${s.breakRating}/100`, inline: true });
   }
