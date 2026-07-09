@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { SYMBOLS } from "@/lib/config";
 import type { Analysis } from "@/lib/types";
 import { fmt } from "@/lib/ui";
@@ -69,18 +70,31 @@ export default function Dashboard() {
             Binance data
           </p>
         </div>
-        <div className="text-right text-xs text-zinc-500">
-          {error ? (
-            <span className="text-red-400">error: {error}</span>
-          ) : (
-            <>
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{" "}
-              live · refresh 30s
-              {lastUpdate > 0 && (
-                <div>updated {new Date(lastUpdate).toLocaleTimeString()}</div>
-              )}
-            </>
-          )}
+        <div className="flex items-center gap-3">
+          <nav className="flex gap-2 text-sm">
+            <span className="rounded-lg border border-zinc-500 bg-zinc-800 px-3 py-1.5">
+              Screener
+            </span>
+            <Link
+              href="/journal"
+              className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 hover:border-zinc-700"
+            >
+              Journal
+            </Link>
+          </nav>
+          <div className="text-right text-xs text-zinc-500">
+            {error ? (
+              <span className="text-red-400">error: {error}</span>
+            ) : (
+              <>
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{" "}
+                live · refresh 30s
+                {lastUpdate > 0 && (
+                  <div>updated {new Date(lastUpdate).toLocaleTimeString()}</div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </header>
 
