@@ -25,6 +25,9 @@ Single source of truth for every tunable knob and env var. Two config files
 | `BREAK_ATR_MULT` / `breakAtrMult` | 0.25 | close-through distance (× ATR) |
 | `RETEST_TOL_ATR` / `retestTolAtr` | 0.4 | retest proximity (× ATR) |
 | `PROXIMITY_ATR` / `proximityAtr` | 0.8 | "watch" proximity (× ATR) |
+| `minRetestRr` (ts only) | 1.5 | hard gate — don't emit retests below this R:R |
+| `accountEquity` (ts only) | 1000 | reference account for journal-only position sizing |
+| `riskPerTrade` (ts only) | 0.01 | fraction risked/trade for the sizing calc (journal only) |
 | `regimeLookback` (ts only) | 20 | bars for the efficiency-ratio regime measure |
 | `regimeMinEr` (ts only) | 0.3 | efficiency ratio ≥ this = trending, else range |
 | `POLL_SECONDS` (py only) | 30 | loop cadence |

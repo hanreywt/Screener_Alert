@@ -1,4 +1,5 @@
 import { getRedis } from "./redisClient";
+import { CONFIG } from "./config";
 import type { Signal } from "./types";
 
 /**
@@ -24,6 +25,9 @@ interface OpenTrade {
   mfe: number; // max favorable excursion (R)
   mae: number; // max adverse excursion (R)
   regime?: string;
+  rr: number; // reward:risk at entry
+  riskPct: number; // stop distance as % of entry
+  sizeNotional: number; // suggested position notional (journal only)
 }
 
 export interface JournalStats {
@@ -53,6 +57,8 @@ export async function logSignals(signals: Signal[]): Promise<void> {
     const risk = Math.abs(s.entry - s.stop);
     if (risk <= 0) continue;
 
+    // Position-size suggestion (journal only): risk a fixed fraction of a
+    // reference account per trade → notional = equity·riskFrac·entry / risk.
     const trade: OpenTrade = {
       symbol: s.symbol,
       dir,
@@ -64,6 +70,9 @@ export async function logSignals(signals: Signal[]): Promise<void> {
       mfe: 0,
       mae: 0,
       regime: s.regime,
+      rr: Math.round((Math.abs(s.target - s.entry) / risk) * 100) / 100,
+      riskPct: Math.round((risk / s.entry) * 10000) / 100,
+      sizeNotional: Math.round((CONFIG.accountEquity * CONFIG.riskPerTrade * s.entry) / risk),
     };
     await r.set(key, JSON.stringify(trade));
     await r.sadd("sig:open", key);
@@ -124,6 +133,9 @@ export async function resolveOpen(
         dir: t.dir,
         outcome,
         R: Math.round(R * 100) / 100,
+        rr: t.rr,
+        riskPct: t.riskPct,
+        sizeNotional: t.sizeNotional,
         mfe: Math.round(t.mfe * 100) / 100,
         mae: Math.round(t.mae * 100) / 100,
         regime: t.regime,

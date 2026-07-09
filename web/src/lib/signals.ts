@@ -60,6 +60,7 @@ function buildRetest(
   const reward = Math.abs(target - entry);
   if (risk <= 0) return null;
   const rr = Math.round((reward / risk) * 100) / 100;
+  if (rr < CONFIG.minRetestRr) return null; // enforce the R:R floor
 
   const r = (n: number) => Math.round(n * 1e6) / 1e6;
   return {
