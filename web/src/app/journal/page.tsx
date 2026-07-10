@@ -40,12 +40,19 @@ interface Journal {
   expired: number;
   winRate: number | null;
   expectancyR: number | null;
+  totalR: number;
+  startEquity: number;
+  riskUsd: number;
+  pnlUsd: number;
+  balanceUsd: number;
   recent: Trade[];
   open: OpenTrade[];
 }
 
 const REFRESH_MS = 30_000;
 const fmtR = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}R`;
+const fmtUsd = (n: number) =>
+  `${n < 0 ? "-" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
 const px = (n: number) =>
   n.toLocaleString("en-US", { maximumFractionDigits: n < 10 ? 4 : 2 });
 const fmtAge = (ts: number) => {
@@ -118,9 +125,20 @@ export default function JournalPage() {
         <div className="h-64 animate-pulse rounded-xl bg-zinc-900/50" />
       ) : (
         <>
-          {/* KPI tiles */}
-          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <Tile label="Resolved trades" value={String(j.trades)} />
+          {/* KPI tiles — lead with dollars */}
+          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Tile
+              label="Balance"
+              value={fmtUsd(j.balanceUsd)}
+              tone={j.pnlUsd >= 0 ? "good" : "bad"}
+              sub={`from ${fmtUsd(j.startEquity)} start`}
+            />
+            <Tile
+              label="Total PnL"
+              value={`${j.pnlUsd >= 0 ? "+" : ""}${fmtUsd(j.pnlUsd)}`}
+              tone={j.pnlUsd >= 0 ? "good" : "bad"}
+              sub={`${((j.pnlUsd / j.startEquity) * 100).toFixed(2)}% · ${fmtR(j.totalR)}`}
+            />
             <Tile
               label="Win rate"
               value={j.winRate == null ? "—" : `${j.winRate}%`}
@@ -131,14 +149,9 @@ export default function JournalPage() {
               label="Expectancy"
               value={j.expectancyR == null ? "—" : fmtR(j.expectancyR)}
               tone={j.expectancyR == null ? "neutral" : j.expectancyR >= 0 ? "good" : "bad"}
-              sub="per trade"
+              sub={`${fmtUsd(Math.round(j.riskUsd * (j.expectancyR ?? 0)))}/trade`}
             />
-            <Tile
-              label="Total"
-              value={fmtR(totalR)}
-              tone={totalR >= 0 ? "good" : "bad"}
-              sub={`last ${equity.length} closed`}
-            />
+            <Tile label="Resolved trades" value={String(j.trades)} />
             <Tile
               label="Signals fired"
               value={String(j.fired.retest)}
@@ -146,13 +159,15 @@ export default function JournalPage() {
             />
           </div>
 
-          {/* Equity curve */}
+          {/* Equity curve (dollars) */}
           <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
             <h2 className="mb-3 text-sm font-semibold text-zinc-300">
               Equity curve{" "}
-              <span className="font-normal text-zinc-500">(cumulative R)</span>
+              <span className="font-normal text-zinc-500">
+                (cumulative PnL, ${j.riskUsd}/R · last {equity.length} closed)
+              </span>
             </h2>
-            <EquityChart points={equity.map((e) => e.cum)} />
+            <EquityChart points={equity.map((e) => e.cum * j.riskUsd)} fmt={fmtUsd} />
           </section>
 
           {/* Running (open) trades */}
@@ -360,7 +375,13 @@ function Outcome({ outcome }: { outcome: string }) {
 }
 
 /** Single-series equity curve as inline SVG with a hover crosshair. */
-function EquityChart({ points }: { points: number[] }) {
+function EquityChart({
+  points,
+  fmt = fmtR,
+}: {
+  points: number[];
+  fmt?: (n: number) => string;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const W = 800;
   const H = 220;
@@ -419,13 +440,13 @@ function EquityChart({ points }: { points: number[] }) {
           </>
         )}
         {/* y labels */}
-        <text x={4} y={y(max) + 4} fill="#71717a" fontSize="11">{fmtR(max)}</text>
-        <text x={4} y={y(min) + 4} fill="#71717a" fontSize="11">{fmtR(min)}</text>
+        <text x={4} y={y(max) + 4} fill="#71717a" fontSize="11">{fmt(max)}</text>
+        <text x={4} y={y(min) + 4} fill="#71717a" fontSize="11">{fmt(min)}</text>
       </svg>
       {hover != null && (
         <div className="pointer-events-none absolute top-0 rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 shadow"
           style={{ left: `${(x(hover) / W) * 100}%`, transform: "translateX(-50%)" }}>
-          trade {hover} · {fmtR(series[hover])}
+          trade {hover} · {fmt(series[hover])}
         </div>
       )}
     </div>

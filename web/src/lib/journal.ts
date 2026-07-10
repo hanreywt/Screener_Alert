@@ -40,6 +40,11 @@ export interface JournalStats {
   expired: number;
   winRate: number | null;
   expectancyR: number | null;
+  totalR: number; // all-time cumulative R
+  startEquity: number; // reference account ($)
+  riskUsd: number; // $ risked per trade (equity × riskPerTrade)
+  pnlUsd: number; // all-time PnL in $ (totalR × riskUsd)
+  balanceUsd: number; // startEquity + pnlUsd
   recent: unknown[];
   open: unknown[]; // currently-running paper trades
 }
@@ -156,6 +161,7 @@ export async function resolveOpen(
 
 /** Aggregate the track record for display. */
 export async function getStats(): Promise<JournalStats> {
+  const riskUsd = CONFIG.accountEquity * CONFIG.riskPerTrade;
   const r = getRedis();
   if (!r) {
     return {
@@ -166,6 +172,11 @@ export async function getStats(): Promise<JournalStats> {
       expired: 0,
       winRate: null,
       expectancyR: null,
+      totalR: 0,
+      startEquity: CONFIG.accountEquity,
+      riskUsd,
+      pnlUsd: 0,
+      balanceUsd: CONFIG.accountEquity,
       recent: [],
       open: [],
     };
@@ -194,6 +205,8 @@ export async function getStats(): Promise<JournalStats> {
   const w = wins ?? 0;
   const l = losses ?? 0;
   const n = trades ?? 0;
+  const totalR = sumR ?? 0;
+  const pnlUsd = Math.round(totalR * riskUsd);
   return {
     fired: { watch: firedW ?? 0, break: firedB ?? 0, retest: firedR ?? 0 },
     trades: n,
@@ -202,6 +215,11 @@ export async function getStats(): Promise<JournalStats> {
     expired: expired ?? 0,
     winRate: w + l > 0 ? Math.round((w / (w + l)) * 1000) / 10 : null,
     expectancyR: n > 0 ? Math.round(((sumR ?? 0) / n) * 1000) / 1000 : null,
+    totalR: Math.round(totalR * 100) / 100,
+    startEquity: CONFIG.accountEquity,
+    riskUsd,
+    pnlUsd,
+    balanceUsd: CONFIG.accountEquity + pnlUsd,
     recent: recent.map((x) => (typeof x === "string" ? JSON.parse(x) : x)),
     open,
   };
