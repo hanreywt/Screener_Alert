@@ -83,17 +83,21 @@ export default function JournalPage() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Compounded balance curve: risk riskPerTrade of current balance each trade.
-  const balanceSeries = useMemo(() => {
-    if (!j) return [];
+  // Compounded balance curve + per-trade $ P&L (each trade risks
+  // riskPerTrade of the balance at that point).
+  const { balanceSeries, pnlByTrade } = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!j) return { balanceSeries: [] as number[], pnlByTrade: m };
     const chrono = [...j.recent].sort((a, b) => a.resolvedAt - b.resolvedAt);
     let bal = j.startEquity;
     const pts = [bal];
     for (const t of chrono) {
-      bal *= 1 + j.riskPerTrade * t.R;
+      const pnl = bal * j.riskPerTrade * t.R;
+      bal += pnl;
       pts.push(bal);
+      m.set(`${t.openedAt}:${t.resolvedAt}:${t.symbol}`, Math.round(pnl));
     }
-    return pts;
+    return { balanceSeries: pts, pnlByTrade: m };
   }, [j]);
 
   return (
@@ -195,7 +199,8 @@ export default function JournalPage() {
                       <th className="py-2 pr-3 text-right">Entry</th>
                       <th className="py-2 pr-3 text-right">Stop</th>
                       <th className="py-2 pr-3 text-right">Target</th>
-                      <th className="py-2 pr-3 text-right">Unreal.</th>
+                      <th className="py-2 pr-3 text-right">Unreal. R</th>
+                      <th className="py-2 pr-3 text-right">Unreal. $</th>
                       <th className="py-2 pr-3 text-right">MFE</th>
                       <th className="py-2 pr-3 text-right">MAE</th>
                       <th className="py-2 pr-3 text-right">R:R</th>
@@ -220,6 +225,13 @@ export default function JournalPage() {
                             className={`py-2 pr-3 text-right font-semibold ${(t.lastR ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}
                           >
                             {t.lastR != null ? fmtR(t.lastR) : "—"}
+                          </td>
+                          <td
+                            className={`py-2 pr-3 text-right ${(t.lastR ?? 0) >= 0 ? "text-emerald-400/80" : "text-red-400/80"}`}
+                          >
+                            {t.lastR != null
+                              ? `${t.lastR >= 0 ? "+" : ""}${fmtUsd(j.balanceUsd * j.riskPerTrade * t.lastR)}`
+                              : "—"}
                           </td>
                           <td className="py-2 pr-3 text-right text-zinc-500">{t.mfe.toFixed(2)}</td>
                           <td className="py-2 pr-3 text-right text-zinc-500">{t.mae.toFixed(2)}</td>
@@ -257,6 +269,7 @@ export default function JournalPage() {
                       <th className="py-2 pr-3">Side</th>
                       <th className="py-2 pr-3">Outcome</th>
                       <th className="py-2 pr-3 text-right">R</th>
+                      <th className="py-2 pr-3 text-right">P&amp;L $</th>
                       <th className="py-2 pr-3 text-right">R:R</th>
                       <th className="py-2 pr-3 text-right">Risk%</th>
                       <th className="py-2 pr-3 text-right">Size</th>
@@ -286,6 +299,16 @@ export default function JournalPage() {
                           >
                             {fmtR(t.R)}
                           </td>
+                          {(() => {
+                            const pnl = pnlByTrade.get(`${t.openedAt}:${t.resolvedAt}:${t.symbol}`);
+                            return (
+                              <td
+                                className={`py-2 pr-3 text-right font-semibold ${(pnl ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                              >
+                                {pnl == null ? "—" : `${pnl >= 0 ? "+" : ""}${fmtUsd(pnl)}`}
+                              </td>
+                            );
+                          })()}
                           <td className="py-2 pr-3 text-right text-zinc-400">
                             {t.rr ?? "—"}
                           </td>
