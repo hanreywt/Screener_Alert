@@ -1,5 +1,5 @@
 import { analyze } from "./analysis";
-import { CONFIG, SYMBOLS, type Symbol } from "./config";
+import { CONFIG, SYMBOLS, SYMBOL_TUNING, type Symbol } from "./config";
 import { getLiqMap } from "./liquidations";
 import { fetchOiSnapshot } from "./derivatives";
 
@@ -21,7 +21,9 @@ function fmt(n: number): string {
  */
 export async function buildScanEmbed(symbol: Symbol) {
   const a = await analyze(symbol);
-  const strong = a.zones.filter((z) => z.strength >= CONFIG.minStrengthAlert);
+  const minStrength =
+    SYMBOL_TUNING[symbol]?.minStrengthAlert ?? CONFIG.minStrengthAlert;
+  const strong = a.zones.filter((z) => z.strength >= minStrength);
 
   const above = strong
     .filter((z) => z.price > a.price)

@@ -1,4 +1,5 @@
-import { CONFIG } from "./config";
+import { CONFIG, SYMBOL_TUNING } from "./config";
+import type { Symbol } from "./config";
 import type { Candle, Regime, Signal, Zone } from "./types";
 
 function avgVol(candles: Candle[], n = 20): number {
@@ -90,7 +91,10 @@ export function evaluate(
   enforceRegime = true,
 ): Signal[] {
   const out: Signal[] = [];
-  const strong = zones.filter((z) => z.strength >= CONFIG.minStrengthAlert);
+  const tuning = SYMBOL_TUNING[symbol as Symbol] ?? {};
+  const minStrength = tuning.minStrengthAlert ?? CONFIG.minStrengthAlert;
+  const watchMin = tuning.watchMinStrength ?? CONFIG.watchMinStrength;
+  const strong = zones.filter((z) => z.strength >= minStrength);
   const avg = avgVol(trig);
   const last = trig[trig.length - 1];
   const r = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -123,7 +127,7 @@ export function evaluate(
           breakRating: rb.rating,
           regime,
         });
-      } else if (!rb.broke && z.strength >= CONFIG.watchMinStrength) {
+      } else if (!rb.broke && z.strength >= watchMin) {
         // Watch is a heads-up, not a trade — only surface it for the
         // strongest zones to keep the channel quiet. Break/retest below still
         // fire for any zone >= minStrengthAlert.

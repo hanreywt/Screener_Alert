@@ -40,6 +40,16 @@ export const CONFIG = {
   regimeMinEr: 0.3, // >= this = trending; below = range/chop
 };
 
+// Per-symbol threshold overrides. Lower-liquidity coins (TAO, ONDO) build
+// structurally weaker zones (less volume concentration, fewer clean touches),
+// so their best levels score below the global thresholds and never alert.
+// These lower the bar for those symbols only — everyone else uses the defaults.
+export const SYMBOL_TUNING: Partial<
+  Record<Symbol, { minStrengthAlert?: number; watchMinStrength?: number }>
+> = {
+  TAOUSDT: { minStrengthAlert: 45, watchMinStrength: 50 },
+};
+
 // Round-number ("psychological") price levels to alert on when crossed.
 // Map symbol -> step size; omit a symbol to disable. BTC alerts on every
 // $1,000 (62k, 63k, ...). Add ETHUSDT: 100, SOLUSDT: 5, etc. to enable more.
