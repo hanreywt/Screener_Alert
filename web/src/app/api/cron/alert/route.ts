@@ -77,7 +77,12 @@ export async function GET(req: NextRequest) {
   await resolveOpen(priceBySymbol);
   await logSignals(fresh);
 
-  await Promise.all([sendDiscord(fresh), sendLevelCrosses(crosses)]);
+  // Retests are alerted as "BOT ENTRY" by the journal (logSignals) — don't
+  // also send the generic retest signal embed, to avoid doubling.
+  await Promise.all([
+    sendDiscord(fresh.filter((s) => s.kind !== "retest")),
+    sendLevelCrosses(crosses),
+  ]);
 
   return NextResponse.json(
     {

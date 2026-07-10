@@ -1,6 +1,6 @@
 import { getRedis } from "./redisClient";
 import { CONFIG } from "./config";
-import { sendTradeExit } from "./discord";
+import { sendTradeEntry, sendTradeExit } from "./discord";
 import type { Signal } from "./types";
 
 /**
@@ -86,6 +86,20 @@ export async function logSignals(signals: Signal[]): Promise<void> {
     };
     await r.set(key, JSON.stringify(trade));
     await r.sadd("sig:open", key);
+
+    // Entry alert fires only here — when a NEW trade actually opens (the
+    // `exists` guard above prevents doubling on a re-fired retest).
+    await sendTradeEntry({
+      symbol: s.symbol,
+      dir,
+      entry: s.entry,
+      stop: s.stop,
+      target: s.target,
+      rr: trade.rr,
+      riskUsd: Math.round(CONFIG.accountEquity * CONFIG.riskPerTrade),
+      regime: s.regime,
+      liqNote: s.liqNote,
+    });
   }
 }
 

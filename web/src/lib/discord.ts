@@ -128,6 +128,40 @@ export async function sendLevelCrosses(crosses: LevelCross[]): Promise<void> {
   await postEmbeds(crosses.map(levelEmbed));
 }
 
+export interface TradeEntry {
+  symbol: string;
+  dir: number;
+  entry: number;
+  stop: number;
+  target: number;
+  rr?: number;
+  riskUsd: number;
+  regime?: string;
+  liqNote?: string;
+}
+
+/** Alert when the bot opens a tracked paper trade (the entry). */
+export async function sendTradeEntry(t: TradeEntry): Promise<void> {
+  const side = t.dir > 0 ? "LONG" : "SHORT";
+  const fields: EmbedField[] = [
+    { name: "Stop", value: String(t.stop), inline: true },
+    { name: "Target", value: String(t.target), inline: true },
+    { name: "R:R", value: String(t.rr ?? "—"), inline: true },
+    { name: "Risk", value: `$${t.riskUsd}`, inline: true },
+  ];
+  if (t.regime) fields.push({ name: "Regime", value: t.regime, inline: true });
+  if (t.liqNote) fields.push({ name: "Liquidity", value: t.liqNote, inline: false });
+  await postEmbeds([
+    {
+      title: `📥 BOT ENTRY · ${t.symbol} ${side} @ ${t.entry}`,
+      description: "Paper trade opened — tracked in the journal",
+      color: 0x3498db,
+      fields,
+      footer: { text: "paper trade — journal tracked" },
+    },
+  ]);
+}
+
 export interface TradeExit {
   symbol: string;
   dir: number;
