@@ -42,6 +42,7 @@ interface Journal {
   expectancyR: number | null;
   totalR: number;
   startEquity: number;
+  riskPerTrade: number;
   riskUsd: number;
   pnlUsd: number;
   balanceUsd: number;
@@ -82,15 +83,18 @@ export default function JournalPage() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Equity curve: cumulative R over resolved trades, oldest → newest.
-  const equity = useMemo(() => {
+  // Compounded balance curve: risk riskPerTrade of current balance each trade.
+  const balanceSeries = useMemo(() => {
     if (!j) return [];
     const chrono = [...j.recent].sort((a, b) => a.resolvedAt - b.resolvedAt);
-    let cum = 0;
-    return chrono.map((t) => ({ t, cum: (cum += t.R) }));
+    let bal = j.startEquity;
+    const pts = [bal];
+    for (const t of chrono) {
+      bal *= 1 + j.riskPerTrade * t.R;
+      pts.push(bal);
+    }
+    return pts;
   }, [j]);
-
-  const totalR = equity.length ? equity[equity.length - 1].cum : 0;
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-4 py-6 text-zinc-100">
@@ -159,15 +163,16 @@ export default function JournalPage() {
             />
           </div>
 
-          {/* Equity curve (dollars) */}
+          {/* Equity curve (compounded balance, $) */}
           <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
             <h2 className="mb-3 text-sm font-semibold text-zinc-300">
               Equity curve{" "}
               <span className="font-normal text-zinc-500">
-                (cumulative PnL, ${j.riskUsd}/R · last {equity.length} closed)
+                (balance, {(j.riskPerTrade * 100).toFixed(0)}%/trade compounded ·
+                last {j.recent.length} closed)
               </span>
             </h2>
-            <EquityChart points={equity.map((e) => e.cum * j.riskUsd)} fmt={fmtUsd} />
+            <EquityChart series={balanceSeries} baseline={j.startEquity} fmt={fmtUsd} />
           </section>
 
           {/* Running (open) trades */}
@@ -374,38 +379,39 @@ function Outcome({ outcome }: { outcome: string }) {
   );
 }
 
-/** Single-series equity curve as inline SVG with a hover crosshair. */
+/** Single-series equity curve (absolute values vs a baseline) as inline SVG. */
 function EquityChart({
-  points,
+  series,
+  baseline = 0,
   fmt = fmtR,
 }: {
-  points: number[];
+  series: number[];
+  baseline?: number;
   fmt?: (n: number) => string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const W = 800;
   const H = 220;
-  const pad = { l: 40, r: 12, t: 12, b: 20 };
+  const pad = { l: 52, r: 12, t: 12, b: 20 };
 
-  if (points.length < 2) {
+  if (series.length < 2) {
     return (
       <div className="flex h-[180px] items-center justify-center text-sm text-zinc-500">
-        Need ≥2 closed trades to plot an equity curve ({points.length} so far).
+        Need ≥2 closed trades to plot a curve ({Math.max(0, series.length - 1)} so far).
       </div>
     );
   }
 
-  const series = [0, ...points]; // start equity at 0
-  const min = Math.min(0, ...series);
-  const max = Math.max(0, ...series);
+  const min = Math.min(baseline, ...series);
+  const max = Math.max(baseline, ...series);
   const span = max - min || 1;
   const x = (i: number) => pad.l + (i / (series.length - 1)) * (W - pad.l - pad.r);
   const y = (v: number) => pad.t + (1 - (v - min) / span) * (H - pad.t - pad.b);
-  const up = points[points.length - 1] >= 0;
+  const up = series[series.length - 1] >= baseline;
   const stroke = up ? "#34d399" : "#f87171"; // emerald / red
   const line = series.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(v)}`).join(" ");
   const area = `${line} L${x(series.length - 1)},${y(min)} L${x(0)},${y(min)} Z`;
-  const zeroY = y(0);
+  const zeroY = y(baseline);
 
   return (
     <div className="relative">

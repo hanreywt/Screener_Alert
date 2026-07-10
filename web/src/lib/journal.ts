@@ -42,9 +42,10 @@ export interface JournalStats {
   expectancyR: number | null;
   totalR: number; // all-time cumulative R
   startEquity: number; // reference account ($)
-  riskUsd: number; // $ risked per trade (equity × riskPerTrade)
-  pnlUsd: number; // all-time PnL in $ (totalR × riskUsd)
-  balanceUsd: number; // startEquity + pnlUsd
+  riskPerTrade: number; // fraction of balance risked per trade
+  riskUsd: number; // $ risked on the NEXT trade (current balance × riskPerTrade)
+  pnlUsd: number; // PnL in $ over the tracked window
+  balanceUsd: number; // compounded balance
   recent: unknown[];
   open: unknown[]; // currently-running paper trades
 }
@@ -174,6 +175,7 @@ export async function getStats(): Promise<JournalStats> {
       expectancyR: null,
       totalR: 0,
       startEquity: CONFIG.accountEquity,
+      riskPerTrade: CONFIG.riskPerTrade,
       riskUsd,
       pnlUsd: 0,
       balanceUsd: CONFIG.accountEquity,
@@ -206,7 +208,17 @@ export async function getStats(): Promise<JournalStats> {
   const l = losses ?? 0;
   const n = trades ?? 0;
   const totalR = sumR ?? 0;
-  const pnlUsd = Math.round(totalR * riskUsd);
+
+  const recentParsed = recent.map((x) => (typeof x === "string" ? JSON.parse(x) : x));
+  // Compounding: risk riskPerTrade of the CURRENT balance each trade, over the
+  // tracked (last ≤50) closed trades in chronological order.
+  const chrono = [...recentParsed].sort(
+    (a, b) => (a.resolvedAt ?? 0) - (b.resolvedAt ?? 0),
+  );
+  let bal = CONFIG.accountEquity;
+  for (const t of chrono) bal *= 1 + CONFIG.riskPerTrade * (t.R ?? 0);
+  const balanceUsd = Math.round(bal);
+
   return {
     fired: { watch: firedW ?? 0, break: firedB ?? 0, retest: firedR ?? 0 },
     trades: n,
@@ -214,13 +226,14 @@ export async function getStats(): Promise<JournalStats> {
     losses: l,
     expired: expired ?? 0,
     winRate: w + l > 0 ? Math.round((w / (w + l)) * 1000) / 10 : null,
-    expectancyR: n > 0 ? Math.round(((sumR ?? 0) / n) * 1000) / 1000 : null,
+    expectancyR: n > 0 ? Math.round((totalR / n) * 1000) / 1000 : null,
     totalR: Math.round(totalR * 100) / 100,
     startEquity: CONFIG.accountEquity,
-    riskUsd,
-    pnlUsd,
-    balanceUsd: CONFIG.accountEquity + pnlUsd,
-    recent: recent.map((x) => (typeof x === "string" ? JSON.parse(x) : x)),
+    riskPerTrade: CONFIG.riskPerTrade,
+    riskUsd: Math.round(balanceUsd * CONFIG.riskPerTrade),
+    pnlUsd: balanceUsd - CONFIG.accountEquity,
+    balanceUsd,
+    recent: recentParsed,
     open,
   };
 }
