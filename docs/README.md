@@ -25,6 +25,7 @@ The web app is what runs 24/7 in the cloud; the Python engine is the local CLI.
 | [web-app.md](web-app.md) | You're changing the Next.js dashboard, lib modules, API routes, or auth gate. |
 | [deployment.md](deployment.md) | You're deploying, changing env vars, cron schedule, Upstash, or the password gate. |
 | [validation.md](validation.md) | You want to know if the strategy has edge — the live journal + backtest, and current results. |
+| [edge-criteria.md](edge-criteria.md) | The go/no-go thresholds a strategy must clear before real money — and its current tier. |
 | [configuration.md](configuration.md) | You need the single source of truth for every tunable knob + env var. |
 
 ## Fast facts
