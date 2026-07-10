@@ -127,3 +127,33 @@ export async function sendDiscord(signals: Signal[]): Promise<void> {
 export async function sendLevelCrosses(crosses: LevelCross[]): Promise<void> {
   await postEmbeds(crosses.map(levelEmbed));
 }
+
+export interface TradeExit {
+  symbol: string;
+  dir: number;
+  outcome: "win" | "loss" | "expired";
+  exitPrice: number;
+  R: number;
+  pnlUsd: number;
+}
+
+/** Alert when a tracked paper trade closes (take-profit / stop / expired). */
+export async function sendTradeExit(t: TradeExit): Promise<void> {
+  const side = t.dir > 0 ? "LONG" : "SHORT";
+  const head =
+    t.outcome === "win"
+      ? "🟢 TAKE PROFIT"
+      : t.outcome === "loss"
+        ? "🔴 STOP HIT"
+        : "⏱️ EXPIRED";
+  const color =
+    t.outcome === "win" ? 0x2ecc71 : t.outcome === "loss" ? 0xe74c3c : 0x95a5a6;
+  await postEmbeds([
+    {
+      title: `${head} · ${t.symbol} ${side} @ ${t.exitPrice}`,
+      description: `${t.R >= 0 ? "+" : ""}${t.R}R · ${t.pnlUsd >= 0 ? "+" : "-"}$${Math.abs(t.pnlUsd)}`,
+      color,
+      footer: { text: "paper trade — journal tracked" },
+    },
+  ]);
+}

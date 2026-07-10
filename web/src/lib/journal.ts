@@ -1,5 +1,6 @@
 import { getRedis } from "./redisClient";
 import { CONFIG } from "./config";
+import { sendTradeExit } from "./discord";
 import type { Signal } from "./types";
 
 /**
@@ -157,6 +158,16 @@ export async function resolveOpen(
     await r.ltrim("sig:recent", 0, 49);
     await r.del(key);
     await r.srem("sig:open", key);
+
+    // Notify: the tracked trade just closed (take-profit / stop / expired).
+    await sendTradeExit({
+      symbol: t.symbol,
+      dir: t.dir,
+      outcome,
+      exitPrice: p,
+      R: Math.round(R * 100) / 100,
+      pnlUsd: Math.round(R * CONFIG.accountEquity * CONFIG.riskPerTrade),
+    });
   }
 }
 
