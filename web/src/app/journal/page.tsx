@@ -139,13 +139,13 @@ export default function JournalPage() {
               label="Balance"
               value={fmtUsd(j.balanceUsd)}
               tone={j.pnlUsd >= 0 ? "good" : "bad"}
-              sub={`from ${fmtUsd(j.startEquity)} start`}
+              sub={`${j.pnlUsd >= 0 ? "▲ +" : "▼ "}${((j.pnlUsd / j.startEquity) * 100).toFixed(2)}% from ${fmtUsd(j.startEquity)}`}
             />
             <Tile
               label="Total PnL"
-              value={`${j.pnlUsd >= 0 ? "+" : ""}${fmtUsd(j.pnlUsd)}`}
+              value={`${j.pnlUsd >= 0 ? "+" : ""}${fmtUsd(j.pnlUsd)} (${j.pnlUsd >= 0 ? "+" : ""}${((j.pnlUsd / j.startEquity) * 100).toFixed(2)}%)`}
               tone={j.pnlUsd >= 0 ? "good" : "bad"}
-              sub={`${((j.pnlUsd / j.startEquity) * 100).toFixed(2)}% · ${fmtR(j.totalR)}`}
+              sub={`${fmtR(j.totalR)} total`}
             />
             <Tile
               label="Win rate"
