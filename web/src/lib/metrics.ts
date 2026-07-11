@@ -45,7 +45,28 @@ export interface PerfReview {
   // --- shape ---
   avgTradeDurationHours: number | null;
   tradingDays: number; // calendar span of the window
+  daysToRatios: number; // days left before Sharpe/Sortino are meaningful (0 = now)
+  daysToAnnualise: number; // days left before CAGR/Calmar are meaningful
 }
+
+const DAY_MS = 864e5;
+const round = (n: number, p = 3) => Math.round(n * 10 ** p) / 10 ** p;
+
+/**
+ * Minimum calendar span before a time-scaled metric is allowed to speak.
+ *
+ * These exist because annualising a short window is not a metric, it's a rumour:
+ * a -1.0% loss over 3 days compounds to a "-70.9% CAGR", and a Sharpe built from
+ * 3 daily returns is pure noise. The live journal starts empty and sits in that
+ * regime for weeks, so without these gates the dashboard would spend its first
+ * month reporting numbers that look authoritative and mean nothing.
+ *
+ * Below the gate we return null and the UI renders "—". Untouched metrics
+ * (total return, max DD, expectancy, PF, win rate) are NOT extrapolations and
+ * stay honest at any sample size.
+ */
+const MIN_DAYS_RATIO = 30; // Sharpe / Sortino: need enough daily observations
+const MIN_DAYS_ANNUALISE = 60; // CAGR / Calmar: need enough window to project a year
 
 const EMPTY: PerfReview = {
   totalTrades: 0, winRate: null, expectancyR: null, profitFactor: null,
@@ -53,10 +74,8 @@ const EMPTY: PerfReview = {
   totalReturnPct: null, annualisedReturnPct: null, maxDrawdownPct: null,
   sharpe: null, sortino: null, calmar: null,
   avgTradeDurationHours: null, tradingDays: 0,
+  daysToRatios: MIN_DAYS_RATIO, daysToAnnualise: MIN_DAYS_ANNUALISE,
 };
-
-const DAY_MS = 864e5;
-const round = (n: number, p = 3) => Math.round(n * 10 ** p) / 10 ** p;
 
 /**
  * Build a daily equity curve by compounding `riskPerTrade` of the running
@@ -135,13 +154,17 @@ export function review(trades: ClosedTrade[], riskPerTrade: number): PerfReview 
 
   const years = days / 365;
   // CAGR is undefined if the account is wiped out; guard the fractional power.
+  // And it stays silent until the window is long enough to project from at all.
   const cagr =
-    years > 0 && finalEq > 0 ? (finalEq ** (1 / years) - 1) * 100 : null;
+    days >= MIN_DAYS_ANNUALISE && years > 0 && finalEq > 0
+      ? (finalEq ** (1 / years) - 1) * 100
+      : null;
 
   const muD = mean(returns);
   const sdD = stdev(returns, muD);
   const ddD = downsideDev(returns);
   const ann = Math.sqrt(365); // daily → annual, rf = 0
+  const ratiosOk = days >= MIN_DAYS_RATIO;
 
   const durH = mean(trades.map((t) => (t.resolvedAt - t.openedAt) / 36e5));
 
@@ -163,12 +186,14 @@ export function review(trades: ClosedTrade[], riskPerTrade: number): PerfReview 
     totalReturnPct: round((finalEq - 1) * 100, 2),
     annualisedReturnPct: cagr != null ? round(cagr, 2) : null,
     maxDrawdownPct: round(maxDd * 100, 2),
-    sharpe: sdD > 0 ? round((muD / sdD) * ann, 2) : null,
-    sortino: ddD > 0 ? round((muD / ddD) * ann, 2) : null,
+    sharpe: ratiosOk && sdD > 0 ? round((muD / sdD) * ann, 2) : null,
+    sortino: ratiosOk && ddD > 0 ? round((muD / ddD) * ann, 2) : null,
     calmar: cagr != null && maxDd < 0 ? round(cagr / Math.abs(maxDd * 100), 2) : null,
 
     avgTradeDurationHours: round(durH, 1),
     tradingDays: days,
+    daysToRatios: Math.max(0, MIN_DAYS_RATIO - days),
+    daysToAnnualise: Math.max(0, MIN_DAYS_ANNUALISE - days),
   };
 }
 

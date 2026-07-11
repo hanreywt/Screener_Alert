@@ -49,6 +49,8 @@ interface Perf {
   calmar: number | null;
   avgTradeDurationHours: number | null;
   tradingDays: number;
+  daysToRatios: number;
+  daysToAnnualise: number;
 }
 interface Journal {
   fired: { watch: number; break: number; retest: number };
@@ -207,6 +209,18 @@ export default function JournalPage() {
             <p className="mb-3 text-xs text-zinc-500">
               Edge metrics are sizing-independent. Return/Sharpe/Sortino/Calmar/DD
               assume {(j.riskPerTrade * 100).toFixed(0)}% risk per trade.
+              {j.perf.daysToRatios > 0 && (
+                <>
+                  {" "}
+                  <span className="text-amber-500/80">
+                    Sharpe/Sortino stay blank for {j.perf.daysToRatios} more days
+                    {j.perf.daysToAnnualise > 0 &&
+                      `, CAGR/Calmar for ${j.perf.daysToAnnualise}`}{" "}
+                    — annualising a window this short produces numbers that look
+                    authoritative and mean nothing.
+                  </span>
+                </>
+              )}
             </p>
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
               <Metric label="Total return" value={j.perf.totalReturnPct} suffix="%" good="pos" />
