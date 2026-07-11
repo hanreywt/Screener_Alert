@@ -85,6 +85,22 @@ export default function ChartPanel({ data }: { data: Analysis }) {
       });
       linesRef.current.push(pl);
     }
+
+    // Previous day/week high-low. Drawn SOLID so they read as fixed reference
+    // levels, distinct from the dashed, score-driven zones above. Amber = daily,
+    // violet = weekly. Display only — these drive nothing.
+    for (const lv of data.refLevels?.levels ?? []) {
+      const weekly = lv.label.startsWith("PW");
+      const pl = series.createPriceLine({
+        price: lv.price,
+        color: weekly ? "#a78bfa" : "#f59e0b",
+        lineWidth: 1,
+        lineStyle: 0, // solid
+        axisLabelVisible: true,
+        title: lv.label,
+      });
+      linesRef.current.push(pl);
+    }
     chart.timeScale().fitContent();
   }, [data]);
 

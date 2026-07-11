@@ -9,6 +9,7 @@ import { fmt } from "@/lib/ui";
 import ZoneTable from "@/components/ZoneTable";
 import AlertsFeed from "@/components/AlertsFeed";
 import VolumeProfilePanel from "@/components/VolumeProfilePanel";
+import KeyLevels from "@/components/KeyLevels";
 
 // chart uses browser-only canvas APIs
 const ChartPanel = dynamic(() => import("@/components/ChartPanel"), {
@@ -158,6 +159,11 @@ export default function Dashboard() {
             </h2>
             <AlertsFeed signals={globalSignals} />
           </section>
+
+          {/* previous day/week high-low — reference only, drives nothing */}
+          <div className="lg:col-span-3">
+            <KeyLevels data={current} />
+          </div>
 
           {/* zone table */}
           <section className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 lg:col-span-3">

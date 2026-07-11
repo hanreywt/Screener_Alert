@@ -4,6 +4,7 @@ import { buildProfile } from "./volumeProfile";
 import { detectZones } from "./zones";
 import { evaluate } from "./signals";
 import { classifyRegime } from "./regime";
+import { getRefLevels } from "./refLevels";
 import type { Analysis } from "./types";
 
 export async function analyze(symbol: string): Promise<Analysis> {
@@ -21,6 +22,10 @@ export async function analyze(symbol: string): Promise<Analysis> {
   const rinfo = classifyRegime(struct, CONFIG.regimeLookback, CONFIG.regimeMinEr);
   const signals = evaluate(symbol, price, zones, trig, atr, rinfo.regime);
 
+  // Reference levels are resolved AFTER the signal path, and are not passed into
+  // it. They exist for the human reading the scan — see lib/refLevels.ts.
+  const refLevels = await getRefLevels(symbol, price);
+
   return {
     symbol,
     price,
@@ -32,5 +37,6 @@ export async function analyze(symbol: string): Promise<Analysis> {
     profile,
     zones,
     signals,
+    refLevels,
   };
 }

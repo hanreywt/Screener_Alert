@@ -1,3 +1,5 @@
+import type { RefLevels } from "./refLevels";
+
 export interface Candle {
   time: number; // unix seconds (open time)
   open: number;
@@ -69,4 +71,7 @@ export interface Analysis {
   profile: VolumeProfile;
   zones: Zone[];
   signals: Signal[];
+  /** Previous day/week high-low. DISPLAY ONLY — never feeds zones or signals.
+   *  See lib/refLevels.ts for why. */
+  refLevels: RefLevels;
 }
