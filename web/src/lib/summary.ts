@@ -1,5 +1,5 @@
 import { SYMBOLS, CONFIG } from "./config";
-import { getKlines } from "./binance";
+import { getKlines, lastClosedIndex } from "./binance";
 import { classifyRegime } from "./regime";
 import type { Candle } from "./types";
 
@@ -54,15 +54,19 @@ async function summariseSymbol(symbol: string): Promise<SymbolSummary | null> {
     getKlines(symbol, "1w", 3),
     getKlines(symbol, CONFIG.structTf, CONFIG.structLookback),
   ]);
-  // Last element is the day that just STARTED (00:00 UTC) — the closed day we
-  // are reporting on is index -2. Same reasoning as lib/refLevels.ts.
+  // The day we report on = the last CLOSED daily candle, located by close time.
+  // NOT `length - 2`: this cron fires at exactly 00:00 UTC, and if Binance hasn't
+  // opened the new day's candle yet, the final element is already closed and
+  // `length - 2` would silently report the day before last.
   if (days.length < 4) return null;
-  const y = days[days.length - 2]; // yesterday (closed)
-  const prior = days[days.length - 3]; // the day before it
+  const iy = lastClosedIndex(days, "1d");
+  if (iy < 1) return null;
+  const y = days[iy]; // the day being reported
+  const prior = days[iy - 1]; // the day before it
 
-  // Volume baseline: the 20 closed days BEFORE yesterday, so yesterday isn't
-  // compared against a window that includes itself.
-  const base = days.slice(-(VOL_BASELINE_DAYS + 2), -2);
+  // Volume baseline: the closed days BEFORE `y`, so it isn't compared against a
+  // window that includes itself.
+  const base = days.slice(Math.max(0, iy - VOL_BASELINE_DAYS), iy);
   const avgVol =
     base.length > 0 ? base.reduce((a, c) => a + c.volume, 0) / base.length : 0;
 
@@ -81,8 +85,9 @@ async function summariseSymbol(symbol: string): Promise<SymbolSummary | null> {
         : `swept prior-day low ${price(prior.low)} then closed back above`,
     );
   }
-  // Weekly context: last CLOSED week.
-  const w = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
+  // Weekly context: last CLOSED week (same close-time rule as above).
+  const iw = lastClosedIndex(weeks, "1w");
+  const w = iw >= 0 ? weeks[iw] : null;
   if (w) {
     if (y.close > w.high) notes.push(`closed above prev-week high ${price(w.high)}`);
     else if (y.close < w.low) notes.push(`closed below prev-week low ${price(w.low)}`);

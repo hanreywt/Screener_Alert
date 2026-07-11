@@ -1,4 +1,4 @@
-import { getKlines } from "./binance";
+import { getKlines, lastClosedIndex } from "./binance";
 
 /**
  * Previous-period high/low — the classic liquidity reference levels.
@@ -31,12 +31,13 @@ export interface RefLevels {
 }
 
 /**
- * Take the last CLOSED candle of `interval` — index -2, because the final
- * element is the still-forming current period and its high/low keep moving.
+ * The last CLOSED candle of `interval` — its high/low are final. Picked by close
+ * time, not by position: see lastClosedIndex() for why `length - 2` is a trap.
  */
 async function lastClosed(symbol: string, interval: "1d" | "1w") {
   const k = await getKlines(symbol, interval, 3);
-  return k.length >= 2 ? k[k.length - 2] : null;
+  const i = lastClosedIndex(k, interval);
+  return i >= 0 ? k[i] : null;
 }
 
 export async function getRefLevels(symbol: string, price: number): Promise<RefLevels> {

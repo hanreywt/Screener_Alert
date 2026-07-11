@@ -78,6 +78,40 @@ export async function getKlinesPaged(
   return out;
 }
 
+/** Duration of one candle, per interval. */
+export const TF_MS: Record<string, number> = {
+  "1m": 6e4,
+  "5m": 3e5,
+  "15m": 9e5,
+  "1h": 36e5,
+  "4h": 144e5,
+  "1d": 864e5,
+  "1w": 6048e5,
+};
+
+/**
+ * Index of the last CLOSED candle — chosen by close time, never by position.
+ *
+ * The tempting shortcut is `length - 2` ("the last one is still forming"). That
+ * breaks at exactly the moment we care about: the daily cron fires at 00:00 UTC,
+ * the instant the period rolls, and Binance may not have created the new forming
+ * candle yet. Then the final element IS closed, `length - 2` points a full day
+ * back, and the report is either mislabelled or silently suppressed by the
+ * once-per-day guard. Ask "has this candle's period elapsed?" instead.
+ */
+export function lastClosedIndex(
+  candles: Candle[],
+  interval: string,
+  now: number = Date.now(),
+): number {
+  const ms = TF_MS[interval];
+  if (!ms) return candles.length - 2; // unknown interval: fall back
+  for (let i = candles.length - 1; i >= 0; i--) {
+    if (candles[i].time * 1000 + ms <= now) return i;
+  }
+  return -1;
+}
+
 export async function getPrice(symbol: string): Promise<number> {
   const j = (await binanceGet("/api/v3/ticker/price", { symbol })) as {
     price: string;
