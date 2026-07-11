@@ -7,6 +7,14 @@ export const CONFIG = {
   triggerTf: "5m",
   triggerLookback: 120,
 
+  // Volume profile is built from a FINER series than the structural one, over
+  // the SAME time span (500×1h = 500h = 2000×15m). Each candle's volume is
+  // smeared uniformly across its high-low range (we have no tick data), so
+  // shorter candles = less smearing = sharper POC/VAH/VAL/HVN placement.
+  // Pivots, ATR, rejection and regime still come off structTf — unchanged.
+  profileTf: "15m",
+  profileLookback: 2000,
+
   profileBins: 100,
   valueAreaPct: 0.7,
   hvnProminence: 0.6,

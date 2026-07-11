@@ -17,6 +17,7 @@ import { buildProfile } from "../src/lib/volumeProfile";
 import { detectZones } from "../src/lib/zones";
 import { classifyRegime } from "../src/lib/regime";
 import { evaluate } from "../src/lib/signals";
+import { review, formatReview } from "../src/lib/metrics";
 import type { Candle } from "../src/lib/types";
 
 const MONTHS = Number(process.env.MONTHS ?? 3);
@@ -49,14 +50,21 @@ const toCandle = (r: Raw): Candle => ({ time: Math.floor(r.openMs / 1000), open:
 interface Entry { entry: number; stop: number; target: number; dir: 1 | -1; risk: number; openIdx: number; }
 
 /** Generate retest entries (independent of exit rule). Cooldown de-dupes the
- *  same zone re-firing on consecutive candles. */
-function collectEntries(struct: Raw[], trig: Raw[], enforceRegime: boolean): Entry[] {
+ *  same zone re-firing on consecutive candles.
+ *
+ *  `prof` is the finer series the volume profile is built from. Pass the struct
+ *  series itself to reproduce the old 1h-profile behaviour (the A/B baseline). */
+function collectEntries(struct: Raw[], trig: Raw[], prof: Raw[], enforceRegime: boolean): Entry[] {
   const entries: Entry[] = [];
   const lastOpenOnZone = new Map<string, number>();
   let sIdx = 0;
   let zones: ReturnType<typeof detectZones> = [];
   let atrVal = 0;
   let regime: ReturnType<typeof classifyRegime>["regime"] = "range";
+  // Moving bounds into `prof` — both window edges advance monotonically with
+  // sIdx, so the profile slice costs O(n) overall rather than O(n) per rebuild.
+  let pLo = 0;
+  let pHi = 0;
 
   for (let i = 0; i < trig.length; i++) {
     const tc = trig[i];
@@ -66,7 +74,14 @@ function collectEntries(struct: Raw[], trig: Raw[], enforceRegime: boolean): Ent
     if (rebuilt) {
       const sw = struct.slice(sIdx - CONFIG.structLookback, sIdx).map(toCandle);
       atrVal = calcAtr(sw);
-      zones = detectZones(sw, buildProfile(sw), atrVal, tc.open);
+      // Profile window = the SAME time span as the structural window, at finer
+      // resolution. Only bars fully closed by now — no lookahead.
+      const winStart = struct[sIdx - CONFIG.structLookback].openMs;
+      const winEnd = struct[sIdx - 1].closeMs;
+      while (pLo < prof.length && prof[pLo].openMs < winStart) pLo++;
+      while (pHi < prof.length && prof[pHi].closeMs <= winEnd) pHi++;
+      const pw = prof.slice(pLo, pHi).map(toCandle);
+      zones = detectZones(sw, buildProfile(pw.length ? pw : sw), atrVal, tc.open);
       regime = classifyRegime(sw, CONFIG.regimeLookback, CONFIG.regimeMinEr).regime;
     }
     const trigWin = trig.slice(Math.max(0, i - CONFIG.triggerLookback + 1), i + 1).map(toCandle);
@@ -87,7 +102,7 @@ function collectEntries(struct: Raw[], trig: Raw[], enforceRegime: boolean): Ent
 type Fill = "pessimistic" | "realistic";
 interface ExitRule { name: string; targetR?: number; breakevenAt?: number; } // targetR undefined = use zone target
 
-interface Res { R: number; outcome: string; mfe: number; mae: number; }
+interface Res { R: number; outcome: string; mfe: number; mae: number; openedAt: number; resolvedAt: number; }
 
 function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Res[] {
   const out: Res[] = [];
@@ -96,6 +111,7 @@ function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Re
     let stop = e.stop;
     let mfe = 0, mae = 0;
     let done = false;
+    const openedAt = trig[e.openIdx].closeMs; // entry fills at the signal bar's close
     for (let j = e.openIdx + 1; j < trig.length && j <= e.openIdx + TIMEOUT_BARS; j++) {
       const c = trig[j];
       const favExtreme = ((e.dir > 0 ? c.high : c.low) - e.entry) * e.dir / e.risk;
@@ -115,14 +131,14 @@ function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Re
 
       if (barrier) {
         const exit = barrier === "stop" ? stop : target;
-        out.push({ R: ((exit - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: barrier === "target" ? "win" : "loss", mfe, mae });
+        out.push({ R: ((exit - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: barrier === "target" ? "win" : "loss", mfe, mae, openedAt, resolvedAt: c.closeMs });
         done = true;
         break;
       }
     }
     if (!done) {
       const last = trig[Math.min(e.openIdx + TIMEOUT_BARS, trig.length - 1)];
-      out.push({ R: ((last.close - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: "timeout", mfe, mae });
+      out.push({ R: ((last.close - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: "timeout", mfe, mae, openedAt, resolvedAt: last.closeMs });
     }
   }
   return out;
@@ -131,8 +147,10 @@ function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Re
 function stats(all: Res[]) {
   const n = all.length;
   if (n === 0) return null;
-  const wins = all.filter((r) => r.outcome === "win").length;
-  const losses = all.filter((r) => r.outcome === "loss").length;
+  // "Win" = a profitable trade, matching metrics.ts. Counting only outcome==="win"
+  // would drop timeouts entirely and report a different win rate than the review.
+  const wins = all.filter((r) => r.R > 0).length;
+  const losses = all.filter((r) => r.R < 0).length;
   const sumR = all.reduce((a, r) => a + r.R, 0);
   const gW = all.filter((r) => r.R > 0).reduce((a, r) => a + r.R, 0);
   const gL = Math.abs(all.filter((r) => r.R < 0).reduce((a, r) => a + r.R, 0));
@@ -140,19 +158,28 @@ function stats(all: Res[]) {
   for (const r of all) { eq += r.R; peak = Math.max(peak, eq); dd = Math.min(dd, eq - peak); }
   const avgMfe = all.reduce((a, r) => a + r.mfe, 0) / n;
   const reached1R = all.filter((r) => r.mfe >= 1).length / n;
-  return { n, wins, losses, winRate: (wins / (wins + losses || 1)) * 100, exp: sumR / n, pf: gL > 0 ? gW / gL : Infinity, dd, avgMfe, reached1R };
+  // t-stat of per-trade R vs zero: is the expectancy distinguishable from luck?
+  const exp = sumR / n;
+  const variance = n > 1 ? all.reduce((a, r) => a + (r.R - exp) ** 2, 0) / (n - 1) : 0;
+  const sd = Math.sqrt(variance);
+  const t = sd > 0 ? exp / (sd / Math.sqrt(n)) : 0;
+  return { n, wins, losses, winRate: (wins / (wins + losses || 1)) * 100, exp, pf: gL > 0 ? gW / gL : Infinity, dd, avgMfe, reached1R, sd, t };
 }
 
 function line(label: string, s: ReturnType<typeof stats>) {
   if (!s) { console.log(`  ${label.padEnd(22)} no trades`); return; }
-  console.log(`  ${label.padEnd(22)} n=${String(s.n).padStart(4)}  win ${s.winRate.toFixed(0).padStart(3)}%  exp ${s.exp >= 0 ? "+" : ""}${s.exp.toFixed(3)}R  PF ${s.pf.toFixed(2)}  DD ${s.dd.toFixed(0)}R`);
+  console.log(`  ${label.padEnd(22)} n=${String(s.n).padStart(4)}  win ${s.winRate.toFixed(0).padStart(3)}%  exp ${s.exp >= 0 ? "+" : ""}${s.exp.toFixed(3)}R  PF ${s.pf.toFixed(2)}  DD ${s.dd.toFixed(0)}R  t=${s.t >= 0 ? "+" : ""}${s.t.toFixed(2)}`);
 }
 
 async function main() {
   const end = Date.now();
   const start = end - MONTHS * 30 * 864e5;
   const structStart = start - CONFIG.structLookback * TF_MS[CONFIG.structTf];
-  console.log(`Backtest ${SYMBOLS.join(",")} · ${MONTHS}mo · ${CONFIG.structTf}/${CONFIG.triggerTf} · cost ${(COST_RT * 100).toFixed(2)}%/rt\n`);
+  // A/B: build the volume profile from each of these, everything else identical.
+  // "struct" = the old behaviour (profile off the 1h structural candles).
+  const profileTfs = (process.env.PROFILE_TF ?? `struct,${CONFIG.profileTf}`).split(",");
+  console.log(`Backtest ${SYMBOLS.join(",")} · ${MONTHS}mo · ${CONFIG.structTf}/${CONFIG.triggerTf} · cost ${(COST_RT * 100).toFixed(2)}%/rt`);
+  console.log(`Profile A/B: ${profileTfs.join(" vs ")} (same ${CONFIG.structLookback}×${CONFIG.structTf} window)\n`);
 
   // Fetch once per symbol; collect regime ON/OFF entries; keep trig for exits.
   const trigBySym: Record<string, Raw[]> = {};
@@ -163,34 +190,75 @@ async function main() {
       fetchKlines(sym, CONFIG.structTf, structStart, end),
       fetchKlines(sym, CONFIG.triggerTf, start, end),
     ]);
-    console.log(`struct ${struct.length}, trigger ${trig.length}`);
+    // One finer series per profile TF under test, over the same span as struct.
+    const profBySym: Record<string, Raw[]> = { struct };
+    for (const tf of profileTfs) {
+      if (tf === "struct" || profBySym[tf]) continue;
+      profBySym[tf] = await fetchKlines(sym, tf, structStart, end);
+    }
+    console.log(
+      `struct ${struct.length}, trigger ${trig.length}` +
+        profileTfs.filter((t) => t !== "struct").map((t) => `, ${t} ${profBySym[t].length}`).join(""),
+    );
     trigBySym[sym] = trig;
-    cache[`${sym}:true`] = collectEntries(struct, trig, true);
-    cache[`${sym}:false`] = collectEntries(struct, trig, false);
+    for (const tf of profileTfs) {
+      cache[`${sym}:${tf}:true`] = collectEntries(struct, trig, profBySym[tf], true);
+      cache[`${sym}:${tf}:false`] = collectEntries(struct, trig, profBySym[tf], false);
+    }
   }
 
-  const gather = (enforceRegime: boolean, rule: ExitRule, fill: Fill): Res[] => {
+  const gather = (ptf: string, enforceRegime: boolean, rule: ExitRule, fill: Fill): Res[] => {
     const res: Res[] = [];
-    for (const sym of SYMBOLS) res.push(...simulate(cache[`${sym}:${enforceRegime}`], trigBySym[sym], rule, fill));
+    for (const sym of SYMBOLS) res.push(...simulate(cache[`${sym}:${ptf}:${enforceRegime}`], trigBySym[sym], rule, fill));
     return res;
   };
+  // Default profile TF for the non-A/B sections below: the last one under test.
+  const base = profileTfs[profileTfs.length - 1];
 
-  console.log(`\nFILL MODEL (regime ON, zone target)`);
-  line("pessimistic (stop 1st)", stats(gather(true, { name: "zone" }, "pessimistic")));
-  line("realistic (open-dist)", stats(gather(true, { name: "zone" }, "realistic")));
+  console.log(`\nPROFILE TIMEFRAME (regime ON, zone target, realistic)`);
+  for (const tf of profileTfs) {
+    line(tf === "struct" ? `${CONFIG.structTf} (baseline)` : tf, stats(gather(tf, true, { name: "zone" }, "realistic")));
+  }
+  // Is any improvement over the baseline real, or is it inside the noise?
+  const bs = stats(gather("struct", true, { name: "zone" }, "realistic"));
+  if (bs) {
+    for (const tf of profileTfs.filter((t) => t !== "struct")) {
+      const cs = stats(gather(tf, true, { name: "zone" }, "realistic"));
+      if (!cs) continue;
+      const se = Math.sqrt(bs.sd ** 2 / bs.n + cs.sd ** 2 / cs.n); // Welch
+      const d = cs.exp - bs.exp;
+      const tDiff = se > 0 ? d / se : 0;
+      console.log(
+        `  → ${tf} vs baseline: Δexp ${d >= 0 ? "+" : ""}${d.toFixed(3)}R  ` +
+          `t=${tDiff.toFixed(2)}  ${Math.abs(tDiff) >= 2 ? "SIGNIFICANT" : "NOT significant (inside noise)"}`,
+      );
+    }
+  }
 
-  console.log(`\nREGIME FILTER (zone target, realistic)`);
-  line("ON", stats(gather(true, { name: "zone" }, "realistic")));
-  line("OFF", stats(gather(false, { name: "zone" }, "realistic")));
+  console.log(`\nFILL MODEL (profile ${base}, regime ON, zone target)`);
+  line("pessimistic (stop 1st)", stats(gather(base, true, { name: "zone" }, "pessimistic")));
+  line("realistic (open-dist)", stats(gather(base, true, { name: "zone" }, "realistic")));
 
-  console.log(`\nEXIT SWEEP (regime ON, realistic)`);
-  line("zone target", stats(gather(true, { name: "zone" }, "realistic")));
-  for (const k of [1, 1.5, 2, 3]) line(`fixed ${k}R`, stats(gather(true, { name: "fx", targetR: k }, "realistic")));
-  line("2R + BE@1R", stats(gather(true, { name: "be", targetR: 2, breakevenAt: 1 }, "realistic")));
+  console.log(`\nREGIME FILTER (profile ${base}, zone target, realistic)`);
+  line("ON", stats(gather(base, true, { name: "zone" }, "realistic")));
+  line("OFF", stats(gather(base, false, { name: "zone" }, "realistic")));
 
-  const diag = stats(gather(true, { name: "zone" }, "realistic"));
+  console.log(`\nEXIT SWEEP (profile ${base}, regime ON, realistic)`);
+  line("zone target", stats(gather(base, true, { name: "zone" }, "realistic")));
+  for (const k of [1, 1.5, 2, 3]) line(`fixed ${k}R`, stats(gather(base, true, { name: "fx", targetR: k }, "realistic")));
+  line("2R + BE@1R", stats(gather(base, true, { name: "be", targetR: 2, breakevenAt: 1 }, "realistic")));
+
+  const diag = stats(gather(base, true, { name: "zone" }, "realistic"));
   if (diag) console.log(`\nDIAGNOSIS  avg MFE ${diag.avgMfe.toFixed(2)}R · ${(diag.reached1R * 100).toFixed(0)}% of trades reached +1R before exit`);
+
+  // Standardised performance review — same module the live journal uses, so
+  // backtest and forward numbers are directly comparable.
+  console.log(`\nPERFORMANCE REVIEW (profile ${base}, regime ON, zone target, realistic)`);
+  console.log(`  risk/trade ${(CONFIG.riskPerTrade * 100).toFixed(1)}% of balance · rf = 0`);
+  console.log(formatReview("ALL SYMBOLS POOLED", review(gather(base, true, { name: "zone" }, "realistic"), CONFIG.riskPerTrade)));
+
   console.log(`\nNet of fees+slippage. Realistic fill: same-bar touch resolved by nearer-to-open barrier.`);
+  console.log(`Money-space metrics (return/Sharpe/Sortino/Calmar/DD%) assume the sizing above — not edge itself.`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

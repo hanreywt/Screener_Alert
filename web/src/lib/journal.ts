@@ -1,6 +1,7 @@
 import { getRedis } from "./redisClient";
 import { CONFIG } from "./config";
 import { sendTradeEntry, sendTradeExit } from "./discord";
+import { review, type PerfReview, type ClosedTrade } from "./metrics";
 import type { Signal } from "./types";
 
 /**
@@ -14,6 +15,8 @@ import type { Signal } from "./types";
  * (the backtest is candle-accurate); this is a directional live validator.
  */
 const MAX_AGE_MS = 48 * 60 * 60 * 1000; // resolve/expire a trade after 48h
+const HISTORY_LIMIT = 1000; // closed trades retained for the performance review
+const RECENT_SHOWN = 50; // how many the dashboard table renders
 
 interface OpenTrade {
   symbol: string;
@@ -47,6 +50,7 @@ export interface JournalStats {
   riskUsd: number; // $ risked on the NEXT trade (current balance × riskPerTrade)
   pnlUsd: number; // PnL in $ over the tracked window
   balanceUsd: number; // compounded balance
+  perf: PerfReview; // standardised performance review (same module as backtest)
   recent: unknown[];
   open: unknown[]; // currently-running paper trades
 }
@@ -169,7 +173,10 @@ export async function resolveOpen(
         resolvedAt: now,
       }),
     );
-    await r.ltrim("sig:recent", 0, 49);
+    // Keep a deep history, not just the 50 the UI shows: the risk-adjusted
+    // metrics (Sharpe/Sortino/Calmar/max-DD) need the full per-trade series —
+    // the sig:stat:* counters alone can't reconstruct an equity curve.
+    await r.ltrim("sig:recent", 0, HISTORY_LIMIT - 1);
     await r.del(key);
     await r.srem("sig:open", key);
 
@@ -204,11 +211,12 @@ export async function getStats(): Promise<JournalStats> {
       riskUsd,
       pnlUsd: 0,
       balanceUsd: CONFIG.accountEquity,
+      perf: review([], CONFIG.riskPerTrade),
       recent: [],
       open: [],
     };
   }
-  const [firedW, firedB, firedR, trades, wins, losses, expired, sumR, recent, openKeys] =
+  const [firedW, firedB, firedR, trades, wins, losses, expired, sumR, history, openKeys] =
     await Promise.all([
       r.get<number>("sig:fired:watch"),
       r.get<number>("sig:fired:break"),
@@ -218,7 +226,7 @@ export async function getStats(): Promise<JournalStats> {
       r.get<number>("sig:stat:loss"),
       r.get<number>("sig:stat:expired"),
       r.get<number>("sig:stat:sumR"),
-      r.lrange("sig:recent", 0, 49),
+      r.lrange("sig:recent", 0, HISTORY_LIMIT - 1),
       r.smembers("sig:open"),
     ]);
 
@@ -234,17 +242,24 @@ export async function getStats(): Promise<JournalStats> {
   const n = trades ?? 0;
   const totalR = sumR ?? 0;
 
-  const recentParsed = recent.map((x) => (typeof x === "string" ? JSON.parse(x) : x));
+  const histParsed = history.map((x) => (typeof x === "string" ? JSON.parse(x) : x));
   // Compounding: risk riskPerTrade of the CURRENT balance each trade, over the
-  // tracked (last ≤50) closed trades in chronological order.
-  const chrono = [...recentParsed].sort(
+  // retained closed trades in chronological order.
+  const chrono = [...histParsed].sort(
     (a, b) => (a.resolvedAt ?? 0) - (b.resolvedAt ?? 0),
   );
   let bal = CONFIG.accountEquity;
   for (const t of chrono) bal *= 1 + CONFIG.riskPerTrade * (t.R ?? 0);
   const balanceUsd = Math.round(bal);
 
+  // Standardised review over the full retained history. Trades written before
+  // timestamps existed are skipped rather than silently dated to the epoch.
+  const closed: ClosedTrade[] = chrono
+    .filter((t) => t.openedAt != null && t.resolvedAt != null && t.R != null)
+    .map((t) => ({ R: t.R, openedAt: t.openedAt, resolvedAt: t.resolvedAt }));
+
   return {
+    perf: review(closed, CONFIG.riskPerTrade),
     fired: { watch: firedW ?? 0, break: firedB ?? 0, retest: firedR ?? 0 },
     trades: n,
     wins: w,
@@ -258,7 +273,7 @@ export async function getStats(): Promise<JournalStats> {
     riskUsd: Math.round(balanceUsd * CONFIG.riskPerTrade),
     pnlUsd: balanceUsd - CONFIG.accountEquity,
     balanceUsd,
-    recent: recentParsed,
+    recent: histParsed.slice(0, RECENT_SHOWN),
     open,
   };
 }

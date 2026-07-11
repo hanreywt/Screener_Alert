@@ -20,6 +20,17 @@ async function binanceGet(path: string, params: Record<string, string>) {
   throw new Error(`Binance request failed: ${String(lastErr)}`);
 }
 
+const MAX_KLINES_PER_REQ = 1000; // Binance hard cap on /klines `limit`
+
+const toCandle = (k: unknown[]): Candle => ({
+  time: Math.floor(Number(k[0]) / 1000),
+  open: Number(k[1]),
+  high: Number(k[2]),
+  low: Number(k[3]),
+  close: Number(k[4]),
+  volume: Number(k[5]),
+});
+
 export async function getKlines(
   symbol: string,
   interval: string,
@@ -28,17 +39,43 @@ export async function getKlines(
   const raw = (await binanceGet("/api/v3/klines", {
     symbol,
     interval,
-    limit: String(limit),
+    limit: String(Math.min(limit, MAX_KLINES_PER_REQ)),
   })) as unknown[][];
 
-  return raw.map((k) => ({
-    time: Math.floor(Number(k[0]) / 1000),
-    open: Number(k[1]),
-    high: Number(k[2]),
-    low: Number(k[3]),
-    close: Number(k[4]),
-    volume: Number(k[5]),
-  }));
+  return raw.map(toCandle);
+}
+
+/**
+ * Fetch the most recent `limit` candles, paging backwards when `limit` exceeds
+ * Binance's 1000-per-request cap. Walks `endTime` back to just before the
+ * earliest bar already collected, so pages join without gaps or overlap.
+ */
+export async function getKlinesPaged(
+  symbol: string,
+  interval: string,
+  limit: number,
+): Promise<Candle[]> {
+  const out: Candle[] = [];
+  let endTime: number | undefined;
+
+  while (out.length < limit) {
+    const want = Math.min(MAX_KLINES_PER_REQ, limit - out.length);
+    const params: Record<string, string> = {
+      symbol,
+      interval,
+      limit: String(want),
+    };
+    if (endTime != null) params.endTime = String(endTime);
+
+    const raw = (await binanceGet("/api/v3/klines", params)) as unknown[][];
+    if (!raw.length) break; // no history left — return what we have
+
+    out.unshift(...raw.map(toCandle));
+    endTime = Number(raw[0][0]) - 1; // just before the earliest bar we now hold
+    if (raw.length < want) break; // exchange had fewer bars than asked
+  }
+
+  return out;
 }
 
 export async function getPrice(symbol: string): Promise<number> {

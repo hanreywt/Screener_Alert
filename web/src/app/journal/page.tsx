@@ -32,6 +32,24 @@ interface OpenTrade {
   regime?: string;
   ts: number;
 }
+interface Perf {
+  totalTrades: number;
+  winRate: number | null;
+  expectancyR: number | null;
+  profitFactor: number | null;
+  avgWinR: number | null;
+  avgLossR: number | null;
+  payoffRatio: number | null;
+  tStat: number | null;
+  totalReturnPct: number | null;
+  annualisedReturnPct: number | null;
+  maxDrawdownPct: number | null;
+  sharpe: number | null;
+  sortino: number | null;
+  calmar: number | null;
+  avgTradeDurationHours: number | null;
+  tradingDays: number;
+}
 interface Journal {
   fired: { watch: number; break: number; retest: number };
   trades: number;
@@ -46,6 +64,7 @@ interface Journal {
   riskUsd: number;
   pnlUsd: number;
   balanceUsd: number;
+  perf: Perf;
   recent: Trade[];
   open: OpenTrade[];
 }
@@ -166,6 +185,36 @@ export default function JournalPage() {
               sub={`retest · ${j.fired.break} break · ${j.fired.watch} watch`}
             />
           </div>
+
+          {/* Standardised performance review — identical metric definitions to
+              the backtest (both call lib/metrics.ts), so the two are comparable. */}
+          <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <h2 className="mb-1 text-sm font-semibold text-zinc-300">
+              Performance review{" "}
+              <span className="font-normal text-zinc-500">
+                ({j.perf.totalTrades} closed · {j.perf.tradingDays}d · same
+                definitions as the backtest)
+              </span>
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500">
+              Edge metrics are sizing-independent. Return/Sharpe/Sortino/Calmar/DD
+              assume {(j.riskPerTrade * 100).toFixed(0)}% risk per trade.
+            </p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+              <Metric label="Total return" value={j.perf.totalReturnPct} suffix="%" good="pos" />
+              <Metric label="Annualised (CAGR)" value={j.perf.annualisedReturnPct} suffix="%" good="pos" />
+              <Metric label="Max drawdown" value={j.perf.maxDrawdownPct} suffix="%" good="neg-is-bad" />
+              <Metric label="Profit factor" value={j.perf.profitFactor} threshold={1} />
+              <Metric label="Sharpe" value={j.perf.sharpe} threshold={0} />
+              <Metric label="Sortino" value={j.perf.sortino} threshold={0} />
+              <Metric label="Calmar" value={j.perf.calmar} threshold={0} />
+              <Metric label="Expectancy" value={j.perf.expectancyR} suffix="R" threshold={0} />
+              <Metric label="Win rate" value={j.perf.winRate} suffix="%" threshold={50} />
+              <Metric label="Avg win / loss" value={j.perf.payoffRatio} threshold={1} />
+              <Metric label="Avg trade" value={j.perf.avgTradeDurationHours} suffix="h" />
+              <Metric label="t-stat (edge vs luck)" value={j.perf.tStat} threshold={2} />
+            </div>
+          </section>
 
           {/* Equity curve (compounded balance, $) */}
           <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
@@ -358,6 +407,40 @@ export default function JournalPage() {
         </>
       )}
     </main>
+  );
+}
+
+/**
+ * One line of the performance review. `threshold` colours the value against the
+ * bar it must clear to count as good (PF > 1, Sharpe > 0, t > 2, …); `good`
+ * handles the metrics where the sign alone decides.
+ */
+function Metric({
+  label,
+  value,
+  suffix = "",
+  threshold,
+  good,
+}: {
+  label: string;
+  value: number | null;
+  suffix?: string;
+  threshold?: number;
+  good?: "pos" | "neg-is-bad";
+}) {
+  let color = "text-zinc-100";
+  if (value != null) {
+    if (threshold != null) color = value >= threshold ? "text-emerald-400" : "text-red-400";
+    else if (good === "pos") color = value >= 0 ? "text-emerald-400" : "text-red-400";
+    else if (good === "neg-is-bad") color = value <= -25 ? "text-red-400" : "text-zinc-100";
+  }
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+      <div className={`mt-0.5 text-lg font-semibold tabular-nums ${color}`}>
+        {value == null ? "—" : `${value}${suffix}`}
+      </div>
+    </div>
   );
 }
 
