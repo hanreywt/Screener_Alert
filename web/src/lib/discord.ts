@@ -101,9 +101,22 @@ export function levelEmbed(c: LevelCross) {
   };
 }
 
-/** POST a batch of embeds to the webhook (chunked at Discord's 10/message). */
-async function postEmbeds(embeds: object[]): Promise<void> {
-  const url = process.env.DISCORD_WEBHOOK_URL;
+/**
+ * POST a batch of embeds to a webhook (chunked at Discord's 10/message).
+ *
+ * `target` picks the channel: alerts go to DISCORD_WEBHOOK_URL, the daily report
+ * to DISCORD_SUMMARY_WEBHOOK_URL. If the summary webhook is unset we send
+ * NOTHING rather than falling back to the alert channel — a misconfigured env
+ * var should be silent, not spam the trading channel with reports.
+ */
+async function postEmbeds(
+  embeds: object[],
+  target: "alerts" | "summary" = "alerts",
+): Promise<void> {
+  const url =
+    target === "summary"
+      ? process.env.DISCORD_SUMMARY_WEBHOOK_URL
+      : process.env.DISCORD_WEBHOOK_URL;
   if (!url || embeds.length === 0) return;
   for (let i = 0; i < embeds.length; i += 10) {
     try {
@@ -116,6 +129,11 @@ async function postEmbeds(embeds: object[]): Promise<void> {
       // never let alerting crash the cron run
     }
   }
+}
+
+/** POST the daily market report to its own channel. No-op if unconfigured. */
+export async function sendSummary(embed: object): Promise<void> {
+  await postEmbeds([embed], "summary");
 }
 
 /** POST zone signals to the Discord channel webhook. No-op if unconfigured. */
