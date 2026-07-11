@@ -34,6 +34,28 @@ Vercel Function  (web/src/app/api/cron/alert/route.ts)
 Discord channel webhook  → your phone (Discord push notification)
 ```
 
+## The daily summary pipeline (the 07:00 briefing)
+
+A **separate** product on a **separate** channel — not part of the alert path:
+
+```
+cron-job.org (second job, 00:00 UTC = 07:00 WIB)
+   │  GET  /api/cron/summary
+   │  Header: Authorization: Bearer <CRON_SECRET>
+   ▼
+Vercel Function  (web/src/app/api/cron/summary/route.ts)
+   │  1. auth check (CRON_SECRET)
+   │  2. buildSummary()  → yesterday's close/%/range/volume/rel-volume,
+   │                       regime, PDH/PDL/PWH/PWL level events
+   │  3. once-per-day guard (Redis `summary:sent:<day>`)
+   ▼
+DISCORD_SUMMARY_WEBHOOK_URL  → the daily-summary channel (NOT the alert channel)
+```
+
+Descriptive only — no signal, no recommendation. The two pipelines share the
+Binance fetch layer and `postEmbeds()` transport, and nothing else. Full rules
+for what each surface may say: [discord-surfaces.md](discord-surfaces.md).
+
 ### Why an external cron (not Vercel Cron)?
 
 Vercel's built-in Cron only fires **once per day on the free Hobby plan** —

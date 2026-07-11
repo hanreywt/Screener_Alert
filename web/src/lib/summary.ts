@@ -158,7 +158,7 @@ export async function buildSummary() {
   return {
     day,
     embed: {
-      title: `📊 Daily Report · ${day} (UTC)`,
+      title: `📊 Daily Summary · ${day} (UTC)`,
       description,
       color: 0x5865f2,
       footer: {

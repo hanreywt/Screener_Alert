@@ -9,38 +9,63 @@ cloud alerter. Deployed to Vercel.
 
 ## Structure
 
+Modules are grouped by **which product they serve** — see
+[discord-surfaces.md](discord-surfaces.md). Shared plumbing sits at the bottom.
+
 ```
 web/src/
   app/
-    layout.tsx, page.tsx, globals.css     # dashboard UI
+    layout.tsx, page.tsx, globals.css     # dashboard UI (the scan)
+    journal/page.tsx                      # journal + performance review UI
     api/analysis/route.ts                 # GET ?symbol= → full analysis JSON
-    api/cron/alert/route.ts               # the serverless alerter (cron target)
-    api/discord/interactions/route.ts     # Discord slash-command endpoint (/scan)
-    api/stats/route.ts                    # live signal track record (journal)
+    api/stats/route.ts                    # live track record + perf review (journal)
+    api/cron/alert/route.ts               # ① ALERTS  — realtime, every 2–5 min
+    api/cron/summary/route.ts             # ② SUMMARY — daily 00:00 UTC (07:00 WIB)
+    api/discord/interactions/route.ts     # ③ /scan slash command
   components/
-    ChartPanel.tsx        # price chart + strength-colored zone lines
+    ChartPanel.tsx        # price chart + zone lines + PDH/PDL/PWH/PWL lines
     VolumeProfilePanel.tsx# volume histogram (POC/VA highlighted)
     ZoneTable.tsx         # ranked zone table
+    KeyLevels.tsx         # prev day/week high-low panel (display only)
     AlertsFeed.tsx        # all-symbols alerts feed
   lib/
-    binance.ts            # klines/price/ATR with mirror failover
-    volumeProfile.ts      # POC / VA / HVN / LVN
-    zones.ts              # zone detection + scoring
+    discord/              # ── all Discord I/O, one file per surface ──
+      transport.ts        #   postEmbeds(embeds, target) — ONLY place that
+                          #   touches a webhook URL
+      alerts.ts           #   ① signal / level / trade-entry / trade-exit embeds
+      summary.ts          #   ② sendSummary → the summary channel
+      scan.ts             #   ③ /scan embed builder
+    ── ① ALERTS domain ──
     signals.ts            # watch / break / retest (stateless!) + regime gate
-    regime.ts             # Kaufman efficiency-ratio trend/range classifier
-    analysis.ts           # orchestrates one symbol's full analysis
-    journal.ts            # forward track record of retest trades (Redis)
-    derivatives.ts        # OI + funding + mark from Hyperliquid (one call)
-    liquidations.ts       # estimated liq clusters (forward-accumulated, Redis)
-    roundLevels.ts        # round-number crossing detection (Redis-backed)
+    zones.ts              # zone detection + scoring
     dedupe.ts             # Upstash de-dupe of repeat signals
-    discord.ts            # embed formatting + webhook POST
+    journal.ts            # forward paper-trade record + forwardNotes() (Redis)
+    roundLevels.ts        # round-number crossing detection (Redis-backed)
+    liquidations.ts       # estimated liq clusters (forward-accumulated, Redis)
+    derivatives.ts        # OI + funding + mark from Hyperliquid (one call)
+    ── ② SUMMARY domain ──
+    summary.ts            # builds the daily briefing (content, not transport)
+    ── SHARED ──
+    binance.ts            # klines/price/ATR, mirror failover, paged fetch
+    volumeProfile.ts      # POC / VA / HVN / LVN  (built from 15m candles)
+    regime.ts             # Kaufman efficiency-ratio trend/range classifier
+    refLevels.ts          # prev day/week high-low — DISPLAY ONLY, never a signal
+    metrics.ts            # standardised perf review (backtest AND journal)
+    analysis.ts           # orchestrates one symbol's full analysis
     redisClient.ts        # shared Upstash client (KV_REST_API_* or UPSTASH_*)
-    config.ts             # SYMBOLS, CONFIG, ROUND_STEP, BINANCE_HOSTS
+    config.ts             # SYMBOLS, CONFIG, EDGE_STATUS, ROUND_STEP, BINANCE_HOSTS
     types.ts, ui.ts       # shared types + UI helpers
-  proxy.ts                # Basic Auth gate (all routes except /api/cron/*)
-  vercel.json             # Vercel cron declaration (daily fallback)
+  proxy.ts                # Basic Auth gate (all routes except /api/cron|discord/*)
+  scripts/
+    backtest.ts           # walk-forward backtest + per-symbol edge table
+    research.ts           # parameter research
+    profile-diff.ts       # 1h-vs-15m volume-profile A/B on live data
+  vercel.json             # Vercel cron declaration (daily fallback only)
 ```
+
+**The rule that keeps this clean:** `lib/discord/transport.ts` is the *only*
+module that reads a webhook URL. Everything else builds embeds and hands them
+over. Adding a channel = adding a `target`, not a new `fetch`.
 
 ## Run locally
 
@@ -90,11 +115,27 @@ Both use the shared `redisClient.ts`. Redis is **optional** — if unconfigured,
 - `rl:last:<symbol>` — last round-level bucket (persistent)
 - `rl:seen:<symbol>:<level>:<dir>` — round-level anti-flap (15-min TTL)
 
+### `GET /api/cron/summary` — the daily briefing
+- **Auth:** `Authorization: Bearer <CRON_SECRET>`. Exempt from the Basic Auth gate.
+- **Does:** `buildSummary()` → yesterday's close/%/range/volume/rel-volume,
+  regime, PDH/PDL/PWH/PWL level events → posts to the **summary** channel.
+- **Query flags:** `?dry=1` build without posting · `?force=1` bypass the
+  once-per-day guard.
+- **Returns:** `{ ok, sent, day }` · `{ ok, skipped: "already sent today" }`.
+- Separate channel, separate cron job, **descriptive only** — see
+  [discord-surfaces.md](discord-surfaces.md).
+
 ## Adding a symbol or feature
 
 - **New symbol:** add to `SYMBOLS` in `config.ts` (and Python `config.py` for
   parity). Optionally add a `ROUND_STEP` entry.
 - **New round-level step:** edit `ROUND_STEP` in `config.ts`.
-- **New alert channel:** add a sender in `discord.ts` style, call it from the
-  cron route.
+- **New Discord channel/surface:** follow the checklist at the bottom of
+  [discord-surfaces.md](discord-surfaces.md). Short version: new webhook env var,
+  new `target` in `lib/discord/transport.ts`, new `lib/discord/<thing>.ts` sender.
+  **Never reuse another surface's webhook.**
+- **Changing what an alert claims:** it may only state what it can measure.
+  `config.EDGE_STATUS` is the single source of truth for the standing verdict;
+  the per-symbol record comes from `journal.forwardNotes()`. Do not hard-code a
+  win rate — one used to live in `signals.ts` and it was wrong.
 - Always `npx tsc --noEmit` before deploying.

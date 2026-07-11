@@ -5,7 +5,7 @@ import {
 } from "discord-interactions";
 import { after } from "next/server";
 import { SYMBOLS } from "@/lib/config";
-import { buildScanEmbed, normalizeSymbol } from "@/lib/discordScan";
+import { buildScanEmbed, normalizeSymbol } from "@/lib/discord/scan";
 
 export const dynamic = "force-dynamic";
 

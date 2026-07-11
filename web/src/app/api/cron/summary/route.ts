@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildSummary } from "@/lib/summary";
-import { sendSummary } from "@/lib/discord";
+import { sendSummary } from "@/lib/discord/summary";
 import { getRedis } from "@/lib/redisClient";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 /**
- * Daily market report → its own Discord channel.
+ * ② DAILY SUMMARY surface → its own Discord channel.
  *
  * Schedule it at 00:00 UTC (= 07:00 WIB) from cron-job.org, with
  * `Authorization: Bearer <CRON_SECRET>`. Summarises the UTC day that just closed.

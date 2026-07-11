@@ -52,12 +52,21 @@ Explicit shell `export`s override `.env` values.
 ### Web app (Vercel env vars — production)
 | Var | Required? | Purpose |
 |---|---|---|
-| `DISCORD_WEBHOOK_URL` | for alerts | Discord channel webhook |
-| `CRON_SECRET` | for security | bearer token for `/api/cron/alert` |
+| `DISCORD_WEBHOOK_URL` | for alerts | **① Alerts** channel webhook |
+| `DISCORD_SUMMARY_WEBHOOK_URL` | for the daily summary | **② Daily summary** channel webhook — a *different* channel. Unset = no summary sent (it does **not** fall back to the alert webhook, on purpose) |
+| `DISCORD_PUBLIC_KEY` | for `/scan` | **③ Slash command** — Ed25519 signature verification |
+| `DISCORD_APP_ID` | for `/scan` | Discord application id |
+| `CRON_SECRET` | for security | bearer token for **both** `/api/cron/alert` and `/api/cron/summary` |
 | `SITE_USER` | for gate | dashboard Basic Auth username |
 | `SITE_PASSWORD` | for gate | dashboard Basic Auth password |
-| `KV_REST_API_URL` | for de-dupe/levels | Upstash (auto by integration) |
-| `KV_REST_API_TOKEN` | for de-dupe/levels | Upstash (auto by integration) |
+| `KV_REST_API_URL` | for de-dupe/levels/journal | Upstash (auto by integration) |
+| `KV_REST_API_TOKEN` | for de-dupe/levels/journal | Upstash (auto by integration) |
+
+> Changing an env var requires a **redeploy** to take effect — Vercel injects
+> them at deploy time. "I added the variable but nothing happened" is almost
+> always this.
+
+See [discord-surfaces.md](discord-surfaces.md) for which var drives which surface.
 
 Fallbacks: `redisClient.ts` also accepts `UPSTASH_REDIS_REST_URL` /
 `UPSTASH_REDIS_REST_TOKEN`. If Redis vars are absent, de-dupe passes through and
@@ -76,3 +85,8 @@ silently no-op. If `CRON_SECRET` is absent, the endpoint is unsecured.
 | `alert:<symbol>:<kind>:<zonePrice>` | 15 min | signal de-dupe |
 | `rl:last:<symbol>` | none | last confirmed round-level bucket (hysteresis) |
 | `oi:hist:<symbol>` | capped 3000 | accumulated OI samples for the liq map (forward-only) |
+| `sig:o:<symbol>:<zonePrice>` | none | an open paper trade on that zone |
+| `sig:open` | none | set of open paper-trade keys |
+| `sig:recent` | capped 1000 | closed paper trades — the perf review needs the full series to build an equity curve |
+| `sig:stat:*`, `sig:fired:*` | none | all-time counters |
+| `summary:sent:<day>` | 30 h | once-per-day guard for the daily summary |

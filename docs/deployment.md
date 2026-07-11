@@ -44,19 +44,40 @@ See [configuration.md](configuration.md) for the authoritative list. Summary:
 > **Never commit real values.** They live only in Vercel. To rotate: edit in the
 > dashboard (or `vercel env rm` + re-add) and redeploy.
 
-## The scheduler (cron-job.org)
+## The schedulers (cron-job.org) — TWO jobs
 
 Vercel's own cron fires only **once/day on Hobby**, so an external pinger drives
-the real cadence.
+the real cadence. There are **two independent jobs**, one per scheduled surface
+([discord-surfaces.md](discord-surfaces.md)).
 
+Both need the same header, added under cron-job.org's **Advanced → Headers**
+(NOT the "HTTP authentication" box):
+
+```
+Authorization: Bearer <CRON_SECRET>
+```
+
+### Job 1 — Alerts (realtime)
 - **URL:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app/api/cron/alert`
 - **Schedule:** every 2–5 min (`*/2 * * * *` etc.). Safe at 1 min too — Redis
   de-dupe prevents spam. Signals are computed on 5m candles, so <2 min gives
   diminishing returns (lower latency, not more signals).
-- **Header (required):** `Authorization: Bearer <CRON_SECRET>` — added under
-  cron-job.org's **Advanced → Headers** (NOT the "HTTP authentication" box).
-- Turn on "Save responses in job history" to debug (look for `{"ok":true,...}`).
-- A `401` in history = the header is wrong (usually missing `Bearer ` prefix).
+
+### Job 2 — Daily summary (07:00 WIB)
+- **URL:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app/api/cron/summary`
+- **Schedule:** daily at **00:00 UTC**, which *is* **07:00 Asia/Jakarta**. Set
+  either — cron-job.org lets you pick the timezone.
+- **Also needs** `DISCORD_SUMMARY_WEBHOOK_URL` set in Vercel (+ redeploy), or the
+  endpoint runs and posts nothing.
+- Safe to let it retry: a Redis guard (`summary:sent:<day>`) means it posts at
+  most once per reported day.
+
+### Debugging either job
+- Turn on "Save responses in job history" (look for `{"ok":true,...}`).
+- A `401` in history = the header is wrong (usually missing the `Bearer ` prefix).
+- `{"ok":true,"skipped":"already sent today"}` on Job 2 is **success**, not an
+  error — the guard did its job.
+- Test the summary without posting: append `?dry=1`. Force a post: `?force=1`.
 
 ## Provisioning Upstash (one-time)
 

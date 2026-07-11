@@ -1,6 +1,6 @@
 import { getRedis } from "./redisClient";
 import { CONFIG, SYMBOLS, EDGE_STATUS } from "./config";
-import { sendTradeEntry, sendTradeExit } from "./discord";
+import { sendTradeEntry, sendTradeExit } from "./discord/alerts";
 import { review, tBarFor, type PerfReview, type ClosedTrade } from "./metrics";
 import type { Signal } from "./types";
 

@@ -1,5 +1,19 @@
-import type { Signal } from "./types";
-import type { LevelCross } from "./roundLevels";
+/**
+ * ① ALERTS surface — realtime, to the trading channel.
+ *
+ * Fires on: zone signals (watch/break), round-level crossings, and paper-trade
+ * open/close. Retests are NOT sent as signalEmbed — the journal announces them
+ * as BOT ENTRY, so the cron route filters them out to avoid double-posting.
+ *
+ * Every actionable alert carries `recordNote`: the MEASURED forward record for
+ * that symbol plus EDGE_STATUS. Never add a claimed win rate — one used to live
+ * in signals.ts ("~60-70%"), was never measured, and the backtest disproved it.
+ *
+ * See docs/discord-surfaces.md.
+ */
+import { postEmbeds } from "./transport";
+import type { Signal } from "../types";
+import type { LevelCross } from "../roundLevels";
 
 const ICON: Record<string, string> = {
   watch: "👀",
@@ -99,41 +113,6 @@ export function levelEmbed(c: LevelCross) {
     description: `Price ${up ? "broke above" : "dropped below"} the ${fmt(c.level)} round level — now ${fmt(c.price)}`,
     color: up ? 0x2ecc71 : 0xe74c3c,
   };
-}
-
-/**
- * POST a batch of embeds to a webhook (chunked at Discord's 10/message).
- *
- * `target` picks the channel: alerts go to DISCORD_WEBHOOK_URL, the daily report
- * to DISCORD_SUMMARY_WEBHOOK_URL. If the summary webhook is unset we send
- * NOTHING rather than falling back to the alert channel — a misconfigured env
- * var should be silent, not spam the trading channel with reports.
- */
-async function postEmbeds(
-  embeds: object[],
-  target: "alerts" | "summary" = "alerts",
-): Promise<void> {
-  const url =
-    target === "summary"
-      ? process.env.DISCORD_SUMMARY_WEBHOOK_URL
-      : process.env.DISCORD_WEBHOOK_URL;
-  if (!url || embeds.length === 0) return;
-  for (let i = 0; i < embeds.length; i += 10) {
-    try {
-      await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ embeds: embeds.slice(i, i + 10) }),
-      });
-    } catch {
-      // never let alerting crash the cron run
-    }
-  }
-}
-
-/** POST the daily market report to its own channel. No-op if unconfigured. */
-export async function sendSummary(embed: object): Promise<void> {
-  await postEmbeds([embed], "summary");
 }
 
 /** POST zone signals to the Discord channel webhook. No-op if unconfigured. */

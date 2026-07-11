@@ -1,7 +1,7 @@
-import { analyze } from "./analysis";
-import { CONFIG, SYMBOLS, SYMBOL_TUNING, type Symbol } from "./config";
-import { getLiqMap } from "./liquidations";
-import { fetchOiSnapshot } from "./derivatives";
+import { analyze } from "../analysis";
+import { CONFIG, SYMBOLS, SYMBOL_TUNING, type Symbol } from "../config";
+import { getLiqMap } from "../liquidations";
+import { fetchOiSnapshot } from "../derivatives";
 
 /** Normalize user input ("btc", "eth") to a full symbol ("BTCUSDT"). */
 export function normalizeSymbol(input: string): Symbol | null {

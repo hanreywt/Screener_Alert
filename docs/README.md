@@ -20,6 +20,7 @@ The web app is what runs 24/7 in the cloud; the Python engine is the local CLI.
 | Doc | Read it when… |
 |---|---|
 | [architecture.md](architecture.md) | You want the big picture + data flow + the cloud alert pipeline. |
+| [discord-surfaces.md](discord-surfaces.md) | You're touching **anything that posts to Discord**. Three separate products (alerts / daily summary / `/scan`) — what each may say, where its code lives, how to tweak it. |
 | [methodology.md](methodology.md) | You're touching zone scoring, volume profile, signals, or round levels — the "why". |
 | [python-engine.md](python-engine.md) | You're changing the Python CLI / local alerter. |
 | [web-app.md](web-app.md) | You're changing the Next.js dashboard, lib modules, API routes, or auth gate. |
@@ -35,7 +36,12 @@ The web app is what runs 24/7 in the cloud; the Python engine is the local CLI.
 - **Vercel project:** `web` under `hanreywts-projects`
 - **Symbols:** BTCUSDT, ETHUSDT, SOLUSDT, ONDOUSDT, TAOUSDT
 - **Data source:** public Binance REST (no API key), with mirror failover
-- **Alert channels:** Discord webhook (primary), Telegram (optional), console
+- **Discord surfaces (3, kept separate):** realtime **alerts** → trading channel ·
+  **daily summary** 07:00 WIB → its own channel · **`/scan`** slash command.
+  See [discord-surfaces.md](discord-surfaces.md).
+- **Other channels:** Telegram (optional, Python only), console
+- **Strategy status:** **Tier 0 — no proven edge.** Alerts are informational;
+  discretionary use only. See [edge-criteria.md](edge-criteria.md).
 
 ## Conventions for changing things
 

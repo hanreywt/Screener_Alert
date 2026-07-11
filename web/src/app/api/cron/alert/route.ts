@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { analyze } from "@/lib/analysis";
 import { SYMBOLS, ROUND_STEP, ROUND_HYSTERESIS } from "@/lib/config";
 import { filterUnseen } from "@/lib/dedupe";
-import { sendDiscord, sendLevelCrosses } from "@/lib/discord";
+import { sendDiscord, sendLevelCrosses } from "@/lib/discord/alerts";
 import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
 import { logSignals, resolveOpen, forwardNotes } from "@/lib/journal";
 import { fetchOiSnapshot } from "@/lib/derivatives";
