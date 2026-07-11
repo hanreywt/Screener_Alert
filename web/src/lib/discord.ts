@@ -77,8 +77,8 @@ export function signalEmbed(s: Signal) {
       { name: "Target", value: String(s.target), inline: true },
       { name: "R:R", value: String(s.rr), inline: true },
     );
-    if (s.winrateNote) {
-      fields.push({ name: "Note", value: s.winrateNote, inline: false });
+    if (s.recordNote) {
+      fields.push({ name: "Track record", value: s.recordNote, inline: false });
     }
   }
   return {
@@ -138,6 +138,7 @@ export interface TradeEntry {
   riskUsd: number;
   regime?: string;
   liqNote?: string;
+  recordNote?: string;
 }
 
 /** Alert when the bot opens a tracked paper trade (the entry). */
@@ -151,13 +152,15 @@ export async function sendTradeEntry(t: TradeEntry): Promise<void> {
   ];
   if (t.regime) fields.push({ name: "Regime", value: t.regime, inline: true });
   if (t.liqNote) fields.push({ name: "Liquidity", value: t.liqNote, inline: false });
+  // The measured record for THIS token — the alert grades itself.
+  if (t.recordNote) fields.push({ name: "Track record", value: t.recordNote, inline: false });
   await postEmbeds([
     {
       title: `📥 BOT ENTRY · ${t.symbol} ${side} @ ${t.entry}`,
       description: "Paper trade opened — tracked in the journal",
       color: 0x3498db,
       fields,
-      footer: { text: "paper trade — journal tracked" },
+      footer: { text: "paper trade — not a recommendation. Edge is unproven (Tier 0)." },
     },
   ]);
 }

@@ -4,7 +4,7 @@ import { SYMBOLS, ROUND_STEP, ROUND_HYSTERESIS } from "@/lib/config";
 import { filterUnseen } from "@/lib/dedupe";
 import { sendDiscord, sendLevelCrosses } from "@/lib/discord";
 import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
-import { logSignals, resolveOpen } from "@/lib/journal";
+import { logSignals, resolveOpen, forwardNotes } from "@/lib/journal";
 import { fetchOiSnapshot } from "@/lib/derivatives";
 import { recordOiSample, getLiqMap, formatLiqNote } from "@/lib/liquidations";
 import type { Signal } from "@/lib/types";
@@ -71,7 +71,14 @@ export async function GET(req: NextRequest) {
     Promise.all(levelChecks),
   ]);
   const crosses = crossesNested.flat();
-  for (const s of fresh) s.liqNote = liqNoteBySymbol[s.symbol];
+  // Attach the MEASURED forward record for each symbol. The alert used to assert
+  // a "~60-70% winrate" that nothing here ever measured; it now carries what the
+  // signal has actually done on that token, and updates itself as evidence lands.
+  const notes = await forwardNotes();
+  for (const s of fresh) {
+    s.liqNote = liqNoteBySymbol[s.symbol];
+    s.recordNote = notes[s.symbol];
+  }
 
   // Track record: resolve open paper trades vs current price, then log new ones.
   await resolveOpen(priceBySymbol);

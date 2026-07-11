@@ -76,8 +76,8 @@ function buildRetest(
     stop: r(stop),
     target: r(target),
     rr,
-    winrateNote:
-      "Break-&-retest of HVN/strong zone: ~60-70% historical winrate in trend; only take if R:R >= 1.5.",
+    // No winrate claim here. `recordNote` is attached later by the alert layer
+    // from the LIVE forward journal for this symbol — measured, not asserted.
   };
 }
 

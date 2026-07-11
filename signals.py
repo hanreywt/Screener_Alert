@@ -1,8 +1,11 @@
 """Trade signals on top of scored zones.
 
-Two proven, high-winrate structures in trending crypto:
+NOT proven. These are two *textbook* structures, not measured edges. Our own
+walk-forward backtest puts break-and-retest at -0.27R/trade (t -5.95, 763
+trades) — reliably negative, on every symbol. See docs/edge-criteria.md. The
+"~60-70% winrate" this docstring used to claim was never measured anywhere.
 
-  A) BREAK-AND-RETEST (primary, ~60-70% hist. winrate on HVN zones):
+  A) BREAK-AND-RETEST (primary):
      price breaks a strong zone on expanding volume, the zone flips
      (old resistance -> new support), price returns to it and rejects.
      Entry in the direction of the break, stop beyond the flipped zone,
@@ -137,6 +140,9 @@ def _build_retest(symbol, price, zone, zones, atr, direction) -> Signal | None:
         f"@ {zone.price} (strength {zone.strength})",
         entry=round(entry, 6), stop=round(stop, 6), target=round(target, 6),
         rr=rr,
-        winrate_note="Break-&-retest of HVN/strong zone: ~60-70% hist. "
-                     "winrate in trend; only take if RR >= 1.5.",
+        # NOT a winrate claim. This used to assert "~60-70% historical winrate",
+        # a number nothing here ever measured — and the backtest since disproved
+        # it. See docs/edge-criteria.md.
+        winrate_note="Tier 0 — backtest OOS is NEGATIVE (-0.27R/trade, t -5.95). "
+                     "Discretionary use only; not a mechanical signal.",
     )

@@ -1,6 +1,19 @@
 export const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ONDOUSDT", "TAOUSDT"] as const;
 export type Symbol = (typeof SYMBOLS)[number];
 
+/**
+ * The measured truth about this strategy, shown on every actionable alert.
+ *
+ * This exists because the alert used to claim "~60-70% historical winrate" —
+ * a number nothing in this repo ever measured, contradicted by our own backtest
+ * (docs/edge-criteria.md). An alert that overstates its edge at the exact moment
+ * you decide whether to click buy is the most expensive bug this system can have.
+ * Keep this line honest and in step with docs/edge-criteria.md.
+ */
+export const EDGE_STATUS =
+  "Tier 0 — backtest OOS is NEGATIVE (−0.27R/trade, t −5.95, 763 trades). " +
+  "No token shows an edge. Discretionary use only — not a mechanical signal.";
+
 export const CONFIG = {
   structTf: "1h",
   structLookback: 500,

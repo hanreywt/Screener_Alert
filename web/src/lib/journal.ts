@@ -1,5 +1,5 @@
 import { getRedis } from "./redisClient";
-import { CONFIG, SYMBOLS } from "./config";
+import { CONFIG, SYMBOLS, EDGE_STATUS } from "./config";
 import { sendTradeEntry, sendTradeExit } from "./discord";
 import { review, tBarFor, type PerfReview, type ClosedTrade } from "./metrics";
 import type { Signal } from "./types";
@@ -17,6 +17,7 @@ import type { Signal } from "./types";
 const MAX_AGE_MS = 48 * 60 * 60 * 1000; // resolve/expire a trade after 48h
 const HISTORY_LIMIT = 1000; // closed trades retained for the performance review
 const RECENT_SHOWN = 50; // how many the dashboard table renders
+const MIN_FWD_TRADES = 30; // Gate B: below this, a symbol's record means nothing
 
 interface OpenTrade {
   symbol: string;
@@ -61,6 +62,9 @@ export interface JournalStats {
 export async function logSignals(signals: Signal[]): Promise<void> {
   const r = getRedis();
   if (!r) return;
+  // Snapshot the record BEFORE this batch opens anything, so the entry alert
+  // reports the track record as it stood when the decision was made.
+  const notes = signals.some((s) => s.kind === "retest") ? await forwardNotes() : {};
   for (const s of signals) {
     await r.incr(`sig:fired:${s.kind}`);
     if (s.kind !== "retest") continue;
@@ -105,6 +109,7 @@ export async function logSignals(signals: Signal[]): Promise<void> {
       riskUsd: Math.round(CONFIG.accountEquity * CONFIG.riskPerTrade),
       regime: s.regime,
       liqNote: s.liqNote,
+      recordNote: notes[s.symbol],
     });
   }
 }
@@ -192,6 +197,35 @@ export async function resolveOpen(
       pnlUsd: Math.round(R * CONFIG.accountEquity * CONFIG.riskPerTrade),
     });
   }
+}
+
+/**
+ * This symbol's MEASURED forward record, as one line for an alert.
+ *
+ * Replaces the old hard-coded "~60-70% historical winrate" note, which was never
+ * measured and was contradicted by our own backtest. Every actionable alert now
+ * carries what this signal has actually done — on this token — plus the standing
+ * edge verdict. It updates itself as evidence accumulates, so the alert can
+ * never again drift out of step with the truth.
+ */
+export async function forwardNotes(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const stats = await getStats();
+  for (const sym of SYMBOLS) {
+    const p = stats.perfBySymbol[sym];
+    const record =
+      !p || p.totalTrades === 0
+        ? "Forward record: no closed trades yet for this token."
+        : `Forward record (${sym}): ${p.totalTrades} closed · ${p.winRate ?? "—"}% win · ` +
+          `${(p.expectancyR ?? 0) >= 0 ? "+" : ""}${p.expectancyR}R/trade` +
+          (p.totalTrades < MIN_FWD_TRADES
+            ? ` · too few to judge (need ${MIN_FWD_TRADES})`
+            : (p.tStat ?? 0) >= stats.tBar
+              ? ` · clears the t≥${stats.tBar} bar`
+              : ` · not distinguishable from luck (t ${p.tStat})`);
+    out[sym] = `${record}\n${EDGE_STATUS}`;
+  }
+  return out;
 }
 
 /** Aggregate the track record for display. */

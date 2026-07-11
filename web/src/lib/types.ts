@@ -51,7 +51,9 @@ export interface Signal {
   stop?: number;
   target?: number;
   rr?: number;
-  winrateNote?: string;
+  /** This symbol's MEASURED forward record, injected at alert time. Never a
+   *  claimed or assumed win rate — see config.EDGE_STATUS. */
+  recordNote?: string;
   regime?: Regime;
   liqNote?: string; // liquidation-cluster context (informational, no score weight)
 }

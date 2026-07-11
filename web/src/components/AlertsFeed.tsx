@@ -64,7 +64,11 @@ export default function AlertsFeed({ signals }: { signals: Signal[] }) {
                   </span>
                 </span>
               </div>
-              <p className="text-[10px] text-zinc-500">{s.winrateNote}</p>
+              {s.recordNote && (
+                <p className="whitespace-pre-line text-[10px] text-zinc-500">
+                  {s.recordNote}
+                </p>
+              )}
             </div>
           )}
         </div>
