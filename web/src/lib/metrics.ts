@@ -172,6 +172,44 @@ export function review(trades: ClosedTrade[], riskPerTrade: number): PerfReview 
   };
 }
 
+/**
+ * Bonferroni-adjusted t bar for judging the BEST of `k` slices.
+ *
+ * Slicing one strategy across 5 symbols is 5 shots at significance, so the
+ * winner clears t=2.0 by luck far more often than the nominal 5% suggests. To
+ * keep the family-wise error at ~5% each slice must clear the α/k quantile.
+ * Normal approximation — fine at the sample sizes we care about (n ≥ 30).
+ */
+export function tBarFor(k: number, alpha = 0.05): number {
+  if (k <= 1) return 1.96;
+  // Inverse normal CDF (Acklam's rational approximation, |ε| < 1.15e-9).
+  const p = 1 - alpha / (2 * k); // two-sided, split across k tests
+  const a = [-39.6968302866538, 220.946098424521, -275.928510446969,
+             138.357751867269, -30.6647980661472, 2.50662827745924];
+  const b = [-54.4760987982241, 161.585836858041, -155.698979859887,
+             66.8013118877197, -13.2806815528857];
+  const c = [-0.00778489400243029, -0.322396458041136, -2.40075827716184,
+             -2.54973253934373, 4.37466414146497, 2.93816398269878];
+  const d = [0.00778469570904146, 0.32246712907004, 2.445134137143, 3.75440866190742];
+  const pl = 0.02425;
+  let q: number, r: number, x: number;
+  if (p < pl) {
+    q = Math.sqrt(-2 * Math.log(p));
+    x = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+        ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  } else if (p <= 1 - pl) {
+    q = p - 0.5;
+    r = q * q;
+    x = (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+        (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    x = -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+         ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  return round(x, 2);
+}
+
 /** Fixed-width console block — same field order everywhere it's printed. */
 export function formatReview(label: string, m: PerfReview): string {
   const f = (v: number | null, suffix = "") =>

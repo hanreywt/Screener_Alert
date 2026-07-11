@@ -65,12 +65,20 @@ interface Journal {
   pnlUsd: number;
   balanceUsd: number;
   perf: Perf;
+  perfBySymbol: Record<string, Perf>;
+  tBar: number;
   recent: Trade[];
   open: OpenTrade[];
 }
 
 const REFRESH_MS = 30_000;
+// Forward trades a symbol needs before its slice means anything (Gate B in
+// docs/edge-criteria.md). Below this we say UNDERPOWERED rather than pretend.
+const MIN_FWD_TRADES = 30;
+const SYMBOL_COUNT = 5;
 const fmtR = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}R`;
+const signColor = (n: number | null) =>
+  n == null ? "text-zinc-500" : n >= 0 ? "text-emerald-400" : "text-red-400";
 const fmtUsd = (n: number) =>
   `${n < 0 ? "-" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
 const px = (n: number) =>
@@ -214,6 +222,66 @@ export default function JournalPage() {
               <Metric label="Avg trade" value={j.perf.avgTradeDurationHours} suffix="h" />
               <Metric label="t-stat (edge vs luck)" value={j.perf.tStat} threshold={2} />
             </div>
+          </section>
+
+          {/* Per-token edge attribution — each symbol earns its own verdict. */}
+          <section className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <h2 className="mb-1 text-sm font-semibold text-zinc-300">
+              Per-token edge{" "}
+              <span className="font-normal text-zinc-500">
+                (forward / paper — {Object.keys(j.perfBySymbol ?? {}).length} tokens with
+                closed trades)
+              </span>
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500">
+              Slicing one strategy {SYMBOL_COUNT} ways is {SYMBOL_COUNT} shots at
+              significance, so the bar is raised to t ≥ {j.tBar} (Bonferroni) and
+              ≥30 forward trades. A green row is a <em>hypothesis</em>, not an edge.
+            </p>
+            {Object.keys(j.perfBySymbol ?? {}).length === 0 ? (
+              <p className="text-sm text-zinc-500">No closed trades yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th className="pb-2 pr-3">Token</th>
+                      <th className="pb-2 pr-3 text-right">Trades</th>
+                      <th className="pb-2 pr-3 text-right">Win</th>
+                      <th className="pb-2 pr-3 text-right">Expectancy</th>
+                      <th className="pb-2 pr-3 text-right">PF</th>
+                      <th className="pb-2 pr-3 text-right">Sharpe</th>
+                      <th className="pb-2 pr-3 text-right">Max DD</th>
+                      <th className="pb-2 pr-3 text-right">t</th>
+                      <th className="pb-2">Verdict</th>
+                    </tr>
+                  </thead>
+                  <tbody className="tabular-nums">
+                    {Object.entries(j.perfBySymbol ?? {}).map(([sym, p]) => (
+                      <tr key={sym} className="border-t border-zinc-800/70">
+                        <td className="py-2 pr-3 font-medium text-zinc-200">{sym}</td>
+                        <td className="py-2 pr-3 text-right text-zinc-300">{p.totalTrades}</td>
+                        <td className="py-2 pr-3 text-right text-zinc-300">
+                          {p.winRate == null ? "—" : `${p.winRate}%`}
+                        </td>
+                        <td className={`py-2 pr-3 text-right ${signColor(p.expectancyR)}`}>
+                          {p.expectancyR == null ? "—" : fmtR(p.expectancyR)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-zinc-300">{p.profitFactor ?? "—"}</td>
+                        <td className={`py-2 pr-3 text-right ${signColor(p.sharpe)}`}>{p.sharpe ?? "—"}</td>
+                        <td className="py-2 pr-3 text-right text-zinc-400">
+                          {p.maxDrawdownPct == null ? "—" : `${p.maxDrawdownPct}%`}
+                        </td>
+                        <td className={`py-2 pr-3 text-right ${signColor(p.tStat)}`}>{p.tStat ?? "—"}</td>
+                        <td className="py-2">
+                          <Verdict p={p} tBar={j.tBar} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           {/* Equity curve (compounded balance, $) */}
@@ -408,6 +476,24 @@ export default function JournalPage() {
       )}
     </main>
   );
+}
+
+/**
+ * Per-token verdict. Deliberately conservative: a slice only reads as an edge if
+ * it has enough forward trades AND clears the multiple-testing-adjusted bar.
+ * Anything else says so plainly rather than letting a lucky slice look tradeable.
+ */
+function Verdict({ p, tBar }: { p: Perf; tBar: number }) {
+  const t = p.tStat ?? 0;
+  if (p.totalTrades < MIN_FWD_TRADES)
+    return (
+      <span className="text-zinc-500">
+        underpowered · {MIN_FWD_TRADES - p.totalTrades} more trades
+      </span>
+    );
+  if (t >= tBar) return <span className="text-emerald-400">edge (t ≥ {tBar})</span>;
+  if (t <= -tBar) return <span className="text-red-400">reliably negative</span>;
+  return <span className="text-zinc-400">indistinguishable from luck</span>;
 }
 
 /**

@@ -17,7 +17,7 @@ import { buildProfile } from "../src/lib/volumeProfile";
 import { detectZones } from "../src/lib/zones";
 import { classifyRegime } from "../src/lib/regime";
 import { evaluate } from "../src/lib/signals";
-import { review, formatReview } from "../src/lib/metrics";
+import { review, formatReview, tBarFor } from "../src/lib/metrics";
 import type { Candle } from "../src/lib/types";
 
 const MONTHS = Number(process.env.MONTHS ?? 3);
@@ -102,9 +102,9 @@ function collectEntries(struct: Raw[], trig: Raw[], prof: Raw[], enforceRegime: 
 type Fill = "pessimistic" | "realistic";
 interface ExitRule { name: string; targetR?: number; breakevenAt?: number; } // targetR undefined = use zone target
 
-interface Res { R: number; outcome: string; mfe: number; mae: number; openedAt: number; resolvedAt: number; }
+interface Res { R: number; outcome: string; mfe: number; mae: number; openedAt: number; resolvedAt: number; sym: string; }
 
-function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Res[] {
+function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill, sym: string): Res[] {
   const out: Res[] = [];
   for (const e of entries) {
     const target = rule.targetR != null ? e.entry + e.dir * rule.targetR * e.risk : e.target;
@@ -131,14 +131,14 @@ function simulate(entries: Entry[], trig: Raw[], rule: ExitRule, fill: Fill): Re
 
       if (barrier) {
         const exit = barrier === "stop" ? stop : target;
-        out.push({ R: ((exit - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: barrier === "target" ? "win" : "loss", mfe, mae, openedAt, resolvedAt: c.closeMs });
+        out.push({ R: ((exit - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: barrier === "target" ? "win" : "loss", mfe, mae, openedAt, resolvedAt: c.closeMs, sym });
         done = true;
         break;
       }
     }
     if (!done) {
       const last = trig[Math.min(e.openIdx + TIMEOUT_BARS, trig.length - 1)];
-      out.push({ R: ((last.close - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: "timeout", mfe, mae, openedAt, resolvedAt: last.closeMs });
+      out.push({ R: ((last.close - e.entry) * e.dir - e.entry * COST_RT) / e.risk, outcome: "timeout", mfe, mae, openedAt, resolvedAt: last.closeMs, sym });
     }
   }
   return out;
@@ -209,7 +209,7 @@ async function main() {
 
   const gather = (ptf: string, enforceRegime: boolean, rule: ExitRule, fill: Fill): Res[] => {
     const res: Res[] = [];
-    for (const sym of SYMBOLS) res.push(...simulate(cache[`${sym}:${ptf}:${enforceRegime}`], trigBySym[sym], rule, fill));
+    for (const sym of SYMBOLS) res.push(...simulate(cache[`${sym}:${ptf}:${enforceRegime}`], trigBySym[sym], rule, fill, sym));
     return res;
   };
   // Default profile TF for the non-A/B sections below: the last one under test.
@@ -253,9 +253,40 @@ async function main() {
 
   // Standardised performance review — same module the live journal uses, so
   // backtest and forward numbers are directly comparable.
+  const all = gather(base, true, { name: "zone" }, "realistic");
   console.log(`\nPERFORMANCE REVIEW (profile ${base}, regime ON, zone target, realistic)`);
   console.log(`  risk/trade ${(CONFIG.riskPerTrade * 100).toFixed(1)}% of balance · rf = 0`);
-  console.log(formatReview("ALL SYMBOLS POOLED", review(gather(base, true, { name: "zone" }, "realistic"), CONFIG.riskPerTrade)));
+  console.log(formatReview("ALL SYMBOLS POOLED", review(all, CONFIG.riskPerTrade)));
+
+  // --- Per-symbol edge attribution -------------------------------------
+  // Which token, if any, carries the edge? Read this section with suspicion:
+  // slicing one strategy 5 ways is 5 shots at significance, so the best slice
+  // looks good by luck far more often than a naive t=2 suggests. The bar below
+  // is Bonferroni-adjusted for exactly that.
+  const tBar = tBarFor(SYMBOLS.length);
+  console.log(`\nPER-SYMBOL EDGE (profile ${base}, regime ON, zone target, realistic)`);
+  console.log(`  ${SYMBOLS.length} slices → significance bar raised t=1.96 → t=${tBar} (Bonferroni), min 100 trades/symbol\n`);
+  console.log(`  ${"symbol".padEnd(9)} ${"n".padStart(5)} ${"win".padStart(6)} ${"exp".padStart(8)} ${"PF".padStart(5)} ${"Sharpe".padStart(7)} ${"maxDD".padStart(8)} ${"t".padStart(6)}   verdict`);
+  for (const sym of SYMBOLS) {
+    const m = review(all.filter((r) => r.sym === sym), CONFIG.riskPerTrade);
+    if (!m.totalTrades) { console.log(`  ${sym.padEnd(9)} no trades`); continue; }
+    const t = m.tStat ?? 0;
+    const enough = m.totalTrades >= 100;
+    const verdict = !enough
+      ? `UNDERPOWERED (n<100)`
+      : t >= tBar
+        ? `✅ EDGE (t≥${tBar})`
+        : t <= -tBar
+          ? `❌ RELIABLY NEGATIVE`
+          : `— indistinguishable from luck`;
+    console.log(
+      `  ${sym.padEnd(9)} ${String(m.totalTrades).padStart(5)} ${`${m.winRate}%`.padStart(6)} ` +
+        `${`${(m.expectancyR ?? 0) >= 0 ? "+" : ""}${m.expectancyR}R`.padStart(8)} ${String(m.profitFactor ?? "—").padStart(5)} ` +
+        `${String(m.sharpe ?? "—").padStart(7)} ${`${m.maxDrawdownPct}%`.padStart(8)} ${`${t >= 0 ? "+" : ""}${t}`.padStart(6)}   ${verdict}`,
+    );
+  }
+  console.log(`\n  A positive slice here is a HYPOTHESIS, not an edge. To promote it: re-run`);
+  console.log(`  out-of-sample on that symbol alone, and confirm it forward in the journal.`);
 
   console.log(`\nNet of fees+slippage. Realistic fill: same-bar touch resolved by nearer-to-open barrier.`);
   console.log(`Money-space metrics (return/Sharpe/Sortino/Calmar/DD%) assume the sizing above — not edge itself.`);

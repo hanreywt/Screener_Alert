@@ -1,7 +1,7 @@
 import { getRedis } from "./redisClient";
-import { CONFIG } from "./config";
+import { CONFIG, SYMBOLS } from "./config";
 import { sendTradeEntry, sendTradeExit } from "./discord";
-import { review, type PerfReview, type ClosedTrade } from "./metrics";
+import { review, tBarFor, type PerfReview, type ClosedTrade } from "./metrics";
 import type { Signal } from "./types";
 
 /**
@@ -51,6 +51,8 @@ export interface JournalStats {
   pnlUsd: number; // PnL in $ over the tracked window
   balanceUsd: number; // compounded balance
   perf: PerfReview; // standardised performance review (same module as backtest)
+  perfBySymbol: Record<string, PerfReview>; // per-token edge attribution
+  tBar: number; // Bonferroni-adjusted significance bar for the per-symbol slices
   recent: unknown[];
   open: unknown[]; // currently-running paper trades
 }
@@ -212,6 +214,8 @@ export async function getStats(): Promise<JournalStats> {
       pnlUsd: 0,
       balanceUsd: CONFIG.accountEquity,
       perf: review([], CONFIG.riskPerTrade),
+      perfBySymbol: {},
+      tBar: tBarFor(SYMBOLS.length),
       recent: [],
       open: [],
     };
@@ -254,12 +258,25 @@ export async function getStats(): Promise<JournalStats> {
 
   // Standardised review over the full retained history. Trades written before
   // timestamps existed are skipped rather than silently dated to the epoch.
-  const closed: ClosedTrade[] = chrono
-    .filter((t) => t.openedAt != null && t.resolvedAt != null && t.R != null)
-    .map((t) => ({ R: t.R, openedAt: t.openedAt, resolvedAt: t.resolvedAt }));
+  const usable = chrono.filter(
+    (t) => t.openedAt != null && t.resolvedAt != null && t.R != null,
+  );
+  const toClosed = (ts: typeof usable): ClosedTrade[] =>
+    ts.map((t) => ({ R: t.R, openedAt: t.openedAt, resolvedAt: t.resolvedAt }));
+
+  // Per-token attribution. Every symbol gets its own review so each can earn
+  // (or fail) its own tier — see docs/edge-criteria.md. Slicing k ways is k
+  // shots at significance, so the UI must judge these against tBar, not 1.96.
+  const perfBySymbol: Record<string, PerfReview> = {};
+  for (const sym of SYMBOLS) {
+    const forSym = usable.filter((t) => t.symbol === sym);
+    if (forSym.length) perfBySymbol[sym] = review(toClosed(forSym), CONFIG.riskPerTrade);
+  }
 
   return {
-    perf: review(closed, CONFIG.riskPerTrade),
+    perf: review(toClosed(usable), CONFIG.riskPerTrade),
+    perfBySymbol,
+    tBar: tBarFor(SYMBOLS.length),
     fired: { watch: firedW ?? 0, break: firedB ?? 0, retest: firedR ?? 0 },
     trades: n,
     wins: w,
