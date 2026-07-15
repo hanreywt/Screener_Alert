@@ -78,6 +78,12 @@ export function signalEmbed(s: Signal) {
   if (s.regime) {
     fields.push({ name: "Regime", value: s.regime, inline: true });
   }
+  if (s.rotationNote) {
+    fields.push({ name: "Rotation", value: s.rotationNote, inline: false });
+  }
+  if (s.flowNote) {
+    fields.push({ name: "Order flow", value: s.flowNote, inline: false });
+  }
   if (s.liqNote) {
     fields.push({ name: "Liquidity", value: s.liqNote, inline: false });
   }

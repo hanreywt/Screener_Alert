@@ -7,6 +7,7 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  takerBuy?: number; // taker-buy BASE volume (Binance kline field 9); undefined if not fetched
 }
 
 export interface VolumeProfile {
@@ -58,6 +59,11 @@ export interface Signal {
   recordNote?: string;
   regime?: Regime;
   liqNote?: string; // liquidation-cluster context (informational, no score weight)
+  /** Taker buy/sell imbalance context near the level (exhaustion cue). DISPLAY
+   *  ONLY — descriptive, never an edge/direction claim. See lib/flow.ts. */
+  flowNote?: string;
+  /** Value-area position + POC rotation target. DISPLAY ONLY. See lib/flow.ts. */
+  rotationNote?: string;
 }
 
 export interface Analysis {

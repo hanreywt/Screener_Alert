@@ -29,6 +29,7 @@ const toCandle = (k: unknown[]): Candle => ({
   low: Number(k[3]),
   close: Number(k[4]),
   volume: Number(k[5]),
+  takerBuy: Number(k[9]), // taker-buy base volume — powers the order-flow note
 });
 
 export async function getKlines(
