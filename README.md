@@ -1,7 +1,7 @@
 # Quant Support/Resistance Engine
 
 Realtime, volume-weighted support/resistance detection + break-and-retest
-alerts for **BTC, ETH, SOL, ONDO** — using free Binance market data (no API
+alerts for **BTC, ETH, SOL, ONDO, TAO** — using free Binance market data (no API
 key required).
 
 ## The methodology (why these zones are "strong")
@@ -82,9 +82,23 @@ zones, `TRIGGER_TF` fires triggers), scoring weights, break thresholds,
 ## Web dashboard (Next.js)
 
 A visual dashboard lives in [`web/`](web/) — same methodology ported to
-TypeScript, served by Next.js 16. Live price chart with strength-colored zone
-lines, a volume-profile histogram (POC/Value Area highlighted), a ranked zone
-table, and an all-symbols alerts feed. Auto-refreshes every 30s.
+TypeScript, served by Next.js 16. Three pages:
+
+- **Screener** (`/`) — live price chart with strength-colored zone lines, a
+  volume-profile histogram (POC/Value Area highlighted), a ranked zone table,
+  and an all-symbols alerts feed. Auto-refreshes every 30s.
+- **Journal** (`/journal`) — forward paper-trade record of every retest signal
+  with a standardized performance review: win rate, expectancy in R, Sharpe /
+  Sortino / Calmar, and a t-stat with Bonferroni multiple-testing correction.
+  Deliberately honest about whether an edge exists — see `EDGE_STATUS`.
+- **Projection** (`/projection`) — BTC monthly-return history stitched back to
+  **2013** (committed Bitstamp seed + live Binance, cached monthly) → a forward
+  **Monte Carlo scenario cone** with bull/base/bear lines at 12/24 months.
+  Optional **halving-cycle mode** draws each forward month from the matching
+  post-halving phase, so the path bends through the corrective and pre-halving
+  years. Includes a Coinglass-style **monthly-returns heatmap** (extended with
+  hover-able projected months) and a **live current-month** figure. Framed as
+  scenario analysis, never a forecast.
 
 ```bash
 cd web
@@ -92,8 +106,9 @@ npm install
 npm run dev      # http://localhost:3000
 ```
 
-Server route `GET /api/analysis?symbol=BTCUSDT` returns the full analysis JSON
-(price, ATR, volume profile, ranked zones, signals). Deploys to Vercel as-is.
+Server routes: `GET /api/analysis?symbol=BTCUSDT` returns the full analysis JSON
+(price, ATR, volume profile, ranked zones, signals); `GET /api/projection`
+returns the BTC monthly history + forward projection. Deploys to Vercel as-is.
 
 The Python engine (root) and the web app are independent — Python is the
 headless CLI/Telegram alerter, the web app is the visual screener.

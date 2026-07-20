@@ -13,8 +13,8 @@ the Python engine is local-only.
 | **Discord webhook** | alert delivery | free |
 | **GitHub** | `hanreywt/Screener_Alert` source | free |
 
-- **Vercel project:** `web` under `hanreywts-projects`
-- **Production URL:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app`
+- **Vercel project:** `web` under `<your-vercel-team>`
+- **Production URL:** `https://<your-app>.vercel.app`
 - **Root Directory** in Vercel project settings must be **`web/`** (the Next.js
   app is a subfolder; the repo root is the Python engine).
 
@@ -58,13 +58,13 @@ Authorization: Bearer <CRON_SECRET>
 ```
 
 ### Job 1 — Alerts (realtime)
-- **URL:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app/api/cron/alert`
+- **URL:** `https://<your-app>.vercel.app/api/cron/alert`
 - **Schedule:** every 2–5 min (`*/2 * * * *` etc.). Safe at 1 min too — Redis
   de-dupe prevents spam. Signals are computed on 5m candles, so <2 min gives
   diminishing returns (lower latency, not more signals).
 
 ### Job 2 — Daily summary (07:00 WIB)
-- **URL:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app/api/cron/summary`
+- **URL:** `https://<your-app>.vercel.app/api/cron/summary`
 - **Schedule:** daily at **00:00 UTC**, which *is* **07:00 Asia/Jakarta**. Set
   either — cron-job.org lets you pick the timezone.
 - **Also needs** `DISCORD_SUMMARY_WEBHOOK_URL` set in Vercel (+ redeploy), or the
@@ -100,7 +100,7 @@ Custom Vercel Password Protection is Pro-only.
 
 ```bash
 SECRET=<CRON_SECRET>
-URL=https://web-lovat-beta-nsjxoj6e9r.vercel.app
+URL=https://<your-app>.vercel.app
 curl -s -o /dev/null -w "%{http_code}\n" "$URL/"                                  # 401 (gated) ✅
 curl -s -o /dev/null -w "%{http_code}\n" -u "USER:PASS" "$URL/"                   # 200 ✅
 curl -s -H "Authorization: Bearer $SECRET" "$URL/api/cron/alert"                  # {"ok":true,...} ✅

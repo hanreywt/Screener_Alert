@@ -17,8 +17,10 @@ web/src/
   app/
     layout.tsx, page.tsx, globals.css     # dashboard UI (the scan)
     journal/page.tsx                      # journal + performance review UI
+    projection/page.tsx                   # BTC forward projection (fan + cycle + heatmap)
     api/analysis/route.ts                 # GET ?symbol= → full analysis JSON
     api/stats/route.ts                    # live track record + perf review (journal)
+    api/projection/route.ts               # GET → BTC monthly history + forward projection
     api/cron/alert/route.ts               # ① ALERTS  — realtime, every 2–5 min
     api/cron/summary/route.ts             # ② SUMMARY — daily 00:00 UTC (07:00 WIB)
     api/discord/interactions/route.ts     # ③ /scan slash command
@@ -28,6 +30,8 @@ web/src/
     ZoneTable.tsx         # ranked zone table
     KeyLevels.tsx         # prev day/week high-low panel (display only)
     AlertsFeed.tsx        # all-symbols alerts feed
+    ProjectionChart.tsx   # log-scale SVG fan chart (history → scenario cone)
+    MonthlyReturnsTable.tsx # returns heatmap, extended with projected months
   lib/
     discord/              # ── all Discord I/O, one file per surface ──
       transport.ts        #   postEmbeds(embeds, target) — ONLY place that
@@ -52,6 +56,8 @@ web/src/
     refLevels.ts          # prev day/week high-low — DISPLAY ONLY, never a signal
     metrics.ts            # standardised perf review (backtest AND journal)
     analysis.ts           # orchestrates one symbol's full analysis
+    projection.ts         # BTC monthly history (seed+Binance) + Monte Carlo/cycle projection
+    data/btc-monthly-seed.json # committed Bitstamp month-end closes 2013–2017
     redisClient.ts        # shared Upstash client (KV_REST_API_* or UPSTASH_*)
     config.ts             # SYMBOLS, CONFIG, EDGE_STATUS, ROUND_STEP, BINANCE_HOSTS
     types.ts, ui.ts       # shared types + UI helpers
@@ -81,6 +87,15 @@ npm run dev            # http://localhost:3000  (NOTE: npm run dev, not "npm dev
 Public-shaped (but behind the Basic Auth gate). Returns the full analysis JSON:
 price, ATR, volume profile, ranked zones, signals. The dashboard polls this
 client-side (auto-refresh ~30s).
+
+### `GET /api/projection` — BTC forward projection
+Behind the Basic Auth gate. Returns BTC monthly-return history stitched from a
+committed Bitstamp seed (2013–2017) + live Binance 1M, plus a forward Monte
+Carlo scenario cone (10/50/90 fan) and bull/base/bear lines at 12/24 months, in
+both **all-history** and **halving-cycle** variants (`lib/projection.ts`). The
+heavy fan is cached in Redis per calendar month (seeded RNG → stable within a
+month); only the live current-month figure is refreshed per request. Scenario
+analysis, not a forecast.
 
 ### `GET /api/cron/alert` — the alerter
 - **Auth:** requires `Authorization: Bearer <CRON_SECRET>` (401 otherwise).

@@ -91,7 +91,7 @@ spamming the trading channel.
 `?force=1` posts even if today's already went out.
 
 ```bash
-SECRET=<CRON_SECRET>; URL=https://web-lovat-beta-nsjxoj6e9r.vercel.app
+SECRET=<CRON_SECRET>; URL=https://<your-app>.vercel.app
 curl -H "Authorization: Bearer $SECRET" "$URL/api/cron/summary?dry=1"    # build only
 curl -H "Authorization: Bearer $SECRET" "$URL/api/cron/summary?force=1"  # post now
 ```

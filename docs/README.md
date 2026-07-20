@@ -32,10 +32,11 @@ The web app is what runs 24/7 in the cloud; the Python engine is the local CLI.
 ## Fast facts
 
 - **GitHub:** `hanreywt/Screener_Alert` (single repo, both apps)
-- **Live dashboard:** `https://web-lovat-beta-nsjxoj6e9r.vercel.app` (password-gated)
-- **Vercel project:** `web` under `hanreywts-projects`
+- **Live dashboard:** `https://<your-app>.vercel.app` (password-gated)
+- **Vercel project:** `web` under `<your-vercel-team>`
 - **Symbols:** BTCUSDT, ETHUSDT, SOLUSDT, ONDOUSDT, TAOUSDT
 - **Data source:** public Binance REST (no API key), with mirror failover
+- **Web pages:** Screener (`/`) · Journal (`/journal`) · Projection (`/projection`)
 - **Discord surfaces (3, kept separate):** realtime **alerts** → trading channel ·
   **daily summary** 07:00 WIB → its own channel · **`/scan`** slash command.
   See [discord-surfaces.md](discord-surfaces.md).
