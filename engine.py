@@ -1,4 +1,4 @@
-"""Realtime quant support/resistance engine.
+"""Realtime support/resistance engine.
 
 Loop:
   for each symbol -> pull HTF candles -> build volume profile ->
@@ -62,7 +62,7 @@ def _dedupe(signals):
 
 
 def run_loop():
-    print(f"⚡ Quant S/R engine live — {', '.join(config.SYMBOLS)}")
+    print(f"⚡ S/R engine live — {', '.join(config.SYMBOLS)}")
     print(f"   Struct {config.STRUCT_TF} / Trigger {config.TRIGGER_TF} / "
           f"poll {config.POLL_SECONDS}s\n")
     while True:

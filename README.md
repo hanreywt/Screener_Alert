@@ -1,4 +1,4 @@
-# Quant Support/Resistance Engine
+# Support/Resistance Engine
 
 Realtime, volume-weighted support/resistance detection + break-and-retest
 alerts for **BTC, ETH, SOL, ONDO, TAO** — using free Binance market data (no API

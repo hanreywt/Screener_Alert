@@ -1,4 +1,4 @@
-# Project Docs — Quant S/R Screener & Alerts
+# Project Docs — S/R Screener & Alerts
 
 Living reference for this project. **Keep it in sync**: when you add, change,
 or remove a feature, update the relevant doc here in the same change.

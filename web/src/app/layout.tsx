@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Quant S/R Engine",
+  title: "S/R Engine",
   description: "Volume-weighted support/resistance & break-and-retest alerts",
 };
 

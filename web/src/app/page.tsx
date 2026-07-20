@@ -65,7 +65,7 @@ export default function Dashboard() {
     <main className="mx-auto min-h-screen max-w-7xl px-4 py-6 text-zinc-100">
       <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">⚡ Quant S/R Engine</h1>
+          <h1 className="text-xl font-bold tracking-tight">⚡ S/R Engine</h1>
           <p className="text-sm text-zinc-500">
             Volume-weighted support/resistance · break-and-retest alerts · live
             Binance data

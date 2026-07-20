@@ -1,4 +1,4 @@
-"""Configuration for the quant S/R engine."""
+"""Configuration for the S/R engine."""
 import os
 
 
