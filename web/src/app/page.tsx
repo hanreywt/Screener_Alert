@@ -82,6 +82,12 @@ export default function Dashboard() {
             >
               Journal
             </Link>
+            <Link
+              href="/projection"
+              className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-1.5 hover:border-zinc-700"
+            >
+              Projection
+            </Link>
           </nav>
           <div className="text-right text-xs text-zinc-500">
             {error ? (
