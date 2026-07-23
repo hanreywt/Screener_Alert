@@ -88,13 +88,19 @@ export async function GET(req: NextRequest) {
       const map = await getLiqMap(sym, price);
       const note = formatLiqNote(map);
       if (note) liqNoteBySymbol[sym] = note;
+      // Cluster ALERTS are additive: anything they throw must degrade to "no
+      // liq alert this run", never take the zone alerts down with them.
       if ((LIQ_ALERT.symbols as readonly string[]).includes(sym)) {
-        liqTop[sym] = topClusterUsd(map); // observability: watch the real scale
-        liqCandidates.push(...findLiqAlerts(sym, map, price));
+        try {
+          liqTop[sym] = topClusterUsd(map); // observability: watch the real scale
+          liqCandidates.push(...findLiqAlerts(sym, map, price));
+        } catch {
+          // ignore — the liqNote above still rides along on zone alerts
+        }
       }
     }),
   );
-  const liqAlerts = await filterLiqCooldown(liqCandidates);
+  const liqAlerts = await filterLiqCooldown(liqCandidates).catch(() => []);
   // Attach the MEASURED forward record for each symbol. The alert used to assert
   // a "~60-70% winrate" that nothing here ever measured; it now carries what the
   // signal has actually done on that token, and updates itself as evidence lands.
@@ -113,7 +119,7 @@ export async function GET(req: NextRequest) {
   await Promise.all([
     sendDiscord(fresh.filter((s) => s.kind !== "retest")),
     sendLevelCrosses(crosses),
-    sendLiqClusters(liqAlerts),
+    sendLiqClusters(liqAlerts).catch(() => {}),
   ]);
 
   return NextResponse.json(
