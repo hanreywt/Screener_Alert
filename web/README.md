@@ -57,14 +57,15 @@ are injected automatically.
 
 ### Scheduling
 
-- **Pro plan:** `vercel.json` already declares a cron. Change its schedule
-  to `* * * * *` (every minute) for near-real-time alerts.
-- **Hobby plan:** Vercel cron only fires once/day, so drive it with a free
-  external pinger instead. Point [cron-job.org](https://cron-job.org) (or
-  GitHub Actions / UptimeRobot) at
-  `https://<your-app>.vercel.app/api/cron/alert` every 1–5 min, with header
-  `Authorization: Bearer <CRON_SECRET>`. Upstash dedupe keeps frequent pings
-  from spamming the channel.
+The alerter is driven by **[cron-job.org](https://cron-job.org)**, an external
+pinger — not Vercel Cron. Point a job at
+`https://<your-app>.vercel.app/api/cron/alert` every 1–5 min with header
+`Authorization: Bearer <CRON_SECRET>`. Upstash dedupe keeps frequent pings from
+spamming the channel.
+
+Vercel Cron isn't used because it fires only once per day on Hobby — far too
+slow for a realtime alerter. See [../docs/deployment.md](../docs/deployment.md)
+for both scheduled jobs (alert + daily summary).
 
 The Discord embed formatting lives in `src/lib/discord.ts`; dedupe in
 `src/lib/dedupe.ts`; the endpoint in `src/app/api/cron/alert/route.ts`.

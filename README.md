@@ -30,7 +30,7 @@ multiple comparisons, and refusing to overstate the result.
 |---|---|
 | **Quant methodology** | Volume Profile (POC/VAH/VAL/HVN/LVN), multi-factor zone scoring, break-and-retest with R:R gating, Kaufman efficiency-ratio regime filter |
 | **Statistical rigor** | Walk-forward out-of-sample backtest, forward paper-trading journal, Sharpe/Sortino/Calmar, t-stats with **Bonferroni** multiple-testing correction, "underpowered" guards |
-| **Full-stack** | Python data engine **+** Next.js 16 / TypeScript dashboard **+** Upstash Redis **+** Discord bot **+** Vercel serverless & cron |
+| **Full-stack** | Python data engine **+** Next.js 16 / TypeScript dashboard **+** Upstash Redis **+** Discord bot **+** Vercel serverless, driven by an external scheduler |
 | **Production engineering** | Auth gating with explicit fail-open/closed reasoning, request de-dupe, monthly caching, Ed25519 webhook verification, secret hygiene |
 | **Intellectual honesty** | A standing, machine-readable `EDGE_STATUS` that tells the truth about the strategy on every single alert |
 
@@ -108,7 +108,8 @@ TypeScript, on Next.js 16.
   volume profile · zones ·                          ├─ dashboard: screener · journal · projection
   break-and-retest · CLI /                          ├─ /api/*  serverless analysis + projection
   Telegram/Discord alerts                           ├─ Upstash Redis  (de-dupe · journal · cache)
-                                                     └─ cron → Discord (alerts + daily summary)
+                                                     └─ Discord (alerts + daily summary),
+                                                        pinged by cron-job.org every 1–5 min
 ```
 
 The Python engine (headless CLI/Telegram alerter) and the web app (visual
