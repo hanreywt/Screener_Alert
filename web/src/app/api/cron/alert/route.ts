@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyze } from "@/lib/analysis";
-import { SYMBOLS, ROUND_STEP, ROUND_HYSTERESIS } from "@/lib/config";
+import { SYMBOLS, ROUND_STEP, ROUND_HYSTERESIS, LIQ_ALERT } from "@/lib/config";
 import { filterUnseen } from "@/lib/dedupe";
-import { sendDiscord, sendLevelCrosses } from "@/lib/discord/alerts";
+import { sendDiscord, sendLevelCrosses, sendLiqClusters } from "@/lib/discord/alerts";
 import { checkLevelCross, type LevelCross } from "@/lib/roundLevels";
 import { logSignals, resolveOpen, forwardNotes } from "@/lib/journal";
 import { fetchOiSnapshot } from "@/lib/derivatives";
-import { recordOiSample, getLiqMap, formatLiqNote } from "@/lib/liquidations";
+import {
+  recordOiSample,
+  getLiqMap,
+  formatLiqNote,
+  findLiqAlerts,
+  filterLiqCooldown,
+  topClusterUsd,
+  type LiqAlert,
+} from "@/lib/liquidations";
 import type { Signal } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -56,21 +64,37 @@ export async function GET(req: NextRequest) {
   await Promise.all(
     Object.entries(oi).map(([sym, s]) => recordOiSample(sym, s.oiUsd, s.mark)),
   );
-  const liqNoteBySymbol: Record<string, string> = {};
-  await Promise.all(
-    SYMBOLS.map(async (sym) => {
-      const price = priceBySymbol[sym];
-      if (price == null) return;
-      const note = formatLiqNote(await getLiqMap(sym, price));
-      if (note) liqNoteBySymbol[sym] = note;
-    }),
-  );
-
   const [fresh, crossesNested] = await Promise.all([
     filterUnseen(collected),
     Promise.all(levelChecks),
   ]);
   const crosses = crossesNested.flat();
+
+  // Liq maps are the most expensive thing in this route — each one LRANGEs up
+  // to 3000 stored OI samples out of Redis. Build them ONLY where they're
+  // consumed: the alert symbols (needed every run) plus symbols that actually
+  // produced a signal to annotate. Previously all five were built every tick
+  // and then discarded, since `fresh` is empty on most runs.
+  const liqSymbols = [
+    ...new Set<string>([...LIQ_ALERT.symbols, ...fresh.map((s) => s.symbol)]),
+  ];
+  const liqNoteBySymbol: Record<string, string> = {};
+  const liqCandidates: LiqAlert[] = [];
+  const liqTop: Record<string, { long: number; short: number }> = {};
+  await Promise.all(
+    liqSymbols.map(async (sym) => {
+      const price = priceBySymbol[sym];
+      if (price == null) return;
+      const map = await getLiqMap(sym, price);
+      const note = formatLiqNote(map);
+      if (note) liqNoteBySymbol[sym] = note;
+      if ((LIQ_ALERT.symbols as readonly string[]).includes(sym)) {
+        liqTop[sym] = topClusterUsd(map); // observability: watch the real scale
+        liqCandidates.push(...findLiqAlerts(sym, map, price));
+      }
+    }),
+  );
+  const liqAlerts = await filterLiqCooldown(liqCandidates);
   // Attach the MEASURED forward record for each symbol. The alert used to assert
   // a "~60-70% winrate" that nothing here ever measured; it now carries what the
   // signal has actually done on that token, and updates itself as evidence lands.
@@ -89,6 +113,7 @@ export async function GET(req: NextRequest) {
   await Promise.all([
     sendDiscord(fresh.filter((s) => s.kind !== "retest")),
     sendLevelCrosses(crosses),
+    sendLiqClusters(liqAlerts),
   ]);
 
   return NextResponse.json(
@@ -98,6 +123,11 @@ export async function GET(req: NextRequest) {
       found: collected.length,
       sent: fresh.length,
       crossed: crosses.length,
+      liqAlerts: liqAlerts.length,
+      // Largest estimated cluster per side, always reported: lets you watch the
+      // real distribution and calibrate LIQ_ALERT.minNotionalUsd from data
+      // rather than from whether an alert happened to fire.
+      liqTop,
       errors: Object.keys(errors).length ? errors : undefined,
     },
     { headers: { "Cache-Control": "no-store" } },

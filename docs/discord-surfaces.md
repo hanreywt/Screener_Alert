@@ -20,7 +20,7 @@ reports, and stops a descriptive report drifting into sounding like a trade call
 | **Webhook env** | `DISCORD_WEBHOOK_URL` | `DISCORD_SUMMARY_WEBHOOK_URL` | *(none — HTTP interactions)* |
 | **Trigger** | cron-job.org, every 2–5 min | cron-job.org, 00:00 UTC (07:00 WIB) | user types `/scan BTC` |
 | **Endpoint** | `/api/cron/alert` | `/api/cron/summary` | `/api/discord/interactions` |
-| **Content code** | `lib/signals.ts`, `lib/journal.ts` | `lib/summary.ts` | `lib/discord/scan.ts` |
+| **Content code** | `lib/signals.ts`, `lib/journal.ts`, `lib/liquidations.ts` | `lib/summary.ts` | `lib/discord/scan.ts` |
 | **Send code** | `lib/discord/alerts.ts` | `lib/discord/summary.ts` | `lib/discord/scan.ts` |
 | **State (Redis)** | de-dupe, journal, round levels | once-per-day guard | none |
 | **May recommend?** | No — it reports setups + their measured record | **No** — descriptive only | No |
@@ -41,6 +41,7 @@ or a paper-trade open/close happens.
 |---|---|---|
 | `signalEmbed` | `sendDiscord()` ← cron/alert | watch + break signals |
 | `levelEmbed` | `sendLevelCrosses()` ← cron/alert | BTC crosses a $1k level |
+| `liqClusterEmbed` | `sendLiqClusters()` ← cron/alert | BTC estimated liq cluster ≥ $70M (see below) |
 | `sendTradeEntry` | `logSignals()` ← `lib/journal.ts` | a retest opens a paper trade (**BOT ENTRY**) |
 | `sendTradeExit` | `resolveOpen()` ← `lib/journal.ts` | that trade hits target / stop / expiry |
 
@@ -56,6 +57,51 @@ that the backtest disproves. **Do not add a claimed win rate back.**
 **To tweak:** thresholds → `config.ts` (`minStrengthAlert`, `watchMinStrength`,
 `minRetestRr`). Embed layout → `lib/discord/alerts.ts`. What fires at all →
 `lib/signals.ts`.
+
+
+### Liq-cluster alerts (`lib/liquidations.ts`) — BTC only
+
+The liq map has always ridden along on zone alerts as `liqNote`. It now also
+fires standalone when a cluster is genuinely large:
+
+```
+⚠️ HL est. long-liq cluster $82M · BTC
+0.6% below at $65,280 · spot $65,644 · hyperliquid:btc
+Estimated from Hyperliquid OI + an assumed leverage mix — not observed orders
+```
+
+**Both sides**, largest qualifying cluster each: long-liq clusters sit *below*
+price (🟧), short-liq *above* (🟪) — matching `convictionLine`'s colour language.
+So at most two alerts per symbol per cooldown.
+
+**Gate is size alone (`LIQ_ALERT.minNotionalUsd`, $70M), deliberately with no
+proximity condition.** Clusters are built only from OI increases at prices we
+actually sampled, so they sit near recent price *by construction* — a "within
+X%" filter would pass almost always and carry no information. Notional is the
+part that varies meaningfully. Distance is still shown, just not gated on.
+
+**Cooldown:** one alert per symbol **per side** per hour (`liq:alert:<sym>:<side>`
+in Redis, `SET NX EX`). Per-side so a long-cluster alert can't mute a short one.
+
+⚠️ **`minNotionalUsd` is not a market-invariant number.** `estimateLiquidations`
+*accumulates* positive OI increments over the trailing `MAX_SAMPLES` window, so
+it scales with cron cadence (finer sampling catches more upticks) and with how
+much wall-clock time 3000 samples covers (~2 days at 1-min, ~10 days at 5-min).
+**Change the cadence → recalibrate the floor.** For scale when this was written,
+Hyperliquid BTC OI was ~$2.4B, so $70M ≈ 3% of total OI in one 0.25% bin.
+
+**Calibrate from data, not from silence:** `/api/cron/alert` returns `liqTop`
+(largest estimated cluster per side) on **every** run, whether or not anything
+fires. `curl` it to see the real distribution instead of inferring it from
+whether an alert happened.
+
+**"est." is not decoration.** The notional is inferred — each OI increase is
+split 50/50 long/short and spread across an *assumed* leverage mix
+(`LEVERAGE` in `liquidations.ts`, explicitly "a guess") — and Hyperliquid is
+only a slice of total perp OI. There is no observed order depth behind it.
+**Do not add "cascade risk" wording:** nothing here has measured whether price
+actually cascades into these levels, and asserting it would be exactly the
+unearned confidence `EDGE_STATUS` exists to prevent.
 
 ---
 

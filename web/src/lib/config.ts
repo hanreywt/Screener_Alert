@@ -84,6 +84,29 @@ export const ROUND_STEP: Partial<Record<Symbol, number>> = {
 // cross (up or down, repeated) alerts; only sub-$30 jitter on the line is muted.
 export const ROUND_HYSTERESIS = 0.03;
 
+/**
+ * Standalone liquidation-cluster alert (the liq map already rides along on zone
+ * alerts as `liqNote`; this fires on its own when a cluster is genuinely big).
+ *
+ * Both sides: long-liq clusters sit BELOW price, short-liq ABOVE. Largest
+ * qualifying cluster per side, so at most two alerts per symbol per cooldown.
+ *
+ * ⚠️ `minNotionalUsd` is NOT a market-invariant quantity. estimateLiquidations
+ * ACCUMULATES positive OI increments over the trailing MAX_SAMPLES window, so
+ * the number scales with how often the cron runs (finer sampling catches more
+ * upticks) and with the window length in wall-clock time (3000 samples is ~2
+ * days at 1-min cadence, ~10 days at 5-min). If you change the cron cadence,
+ * RE-CALIBRATE this — it will silently mean something different.
+ *
+ * For scale at the time of writing: Hyperliquid BTC OI was ~$2.4B, so $70M is
+ * ~3% of total OI concentrated in one 0.25% price bin.
+ */
+export const LIQ_ALERT = {
+  symbols: ["BTCUSDT"] as Symbol[],
+  minNotionalUsd: 70_000_000,
+  cooldownSec: 3600, // one alert per symbol per SIDE per hour — anti-spam
+};
+
 // Binance public REST mirrors (some regions block api.binance.com).
 export const BINANCE_HOSTS = [
   "https://api.binance.com",

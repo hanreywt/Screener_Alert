@@ -1,4 +1,5 @@
 import { getRedis } from "./redisClient";
+import { LIQ_ALERT } from "./config";
 
 export interface LiqCluster {
   price: number;
@@ -118,6 +119,80 @@ export async function getLiqMap(
   currentPrice: number,
 ): Promise<LiqMap> {
   return estimateLiquidations(await loadSamples(symbol), currentPrice);
+}
+
+export interface LiqAlert {
+  symbol: string;
+  side: "long" | "short";
+  price: number; // where the cluster sits
+  notionalUsd: number; // ESTIMATED notional — see estimateLiquidations
+  distPct: number; // absolute distance from current price, in percent
+  currentPrice: number;
+}
+
+/**
+ * Pick the biggest cluster per side that clears the size floor.
+ *
+ * Size alone is the gate — deliberately no proximity condition. Clusters are
+ * built only from OI increases at prices we actually sampled, so they sit near
+ * recent price BY CONSTRUCTION; a "within X%" filter would pass nearly always
+ * and tell you nothing. Notional is the part that varies meaningfully.
+ *
+ * Pure — no Redis, no clock. Cooldown is applied separately.
+ */
+export function findLiqAlerts(
+  symbol: string,
+  map: LiqMap,
+  currentPrice: number,
+): LiqAlert[] {
+  if (currentPrice <= 0) return [];
+  const out: LiqAlert[] = [];
+  for (const side of ["long", "short"] as const) {
+    const best = map.clusters
+      .filter((c) => c.side === side && c.notionalUsd >= LIQ_ALERT.minNotionalUsd)
+      .sort((a, b) => b.notionalUsd - a.notionalUsd)[0];
+    if (!best) continue;
+    out.push({
+      symbol,
+      side,
+      price: best.price,
+      notionalUsd: best.notionalUsd,
+      distPct: (Math.abs(best.price - currentPrice) / currentPrice) * 100,
+      currentPrice,
+    });
+  }
+  return out;
+}
+
+/**
+ * Drop alerts fired for the same symbol+side within the cooldown, and mark the
+ * survivors. Keyed per SIDE so a long-cluster alert can't mute a short one.
+ * Without Redis nothing is suppressed (same degradation as dedupe.ts).
+ */
+export async function filterLiqCooldown(alerts: LiqAlert[]): Promise<LiqAlert[]> {
+  const r = getRedis();
+  if (!r) return alerts;
+  const fresh: LiqAlert[] = [];
+  for (const a of alerts) {
+    const set = await r.set(`liq:alert:${a.symbol}:${a.side}`, Date.now(), {
+      nx: true,
+      ex: LIQ_ALERT.cooldownSec,
+    });
+    if (set === "OK") fresh.push(a);
+  }
+  return fresh;
+}
+
+/** Largest estimated cluster per side, for observability (JSON response only —
+ *  lets you watch the real distribution without waiting on an alert to fire). */
+export function topClusterUsd(map: LiqMap): { long: number; short: number } {
+  const top = (side: "long" | "short") =>
+    Math.round(
+      map.clusters
+        .filter((c) => c.side === side)
+        .reduce((m, c) => Math.max(m, c.notionalUsd), 0),
+    );
+  return { long: top("long"), short: top("short") };
 }
 
 const usd = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${(n / 1e6).toFixed(0)}M`);

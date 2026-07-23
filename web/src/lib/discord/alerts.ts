@@ -14,6 +14,7 @@
 import { postEmbeds } from "./transport";
 import type { Signal } from "../types";
 import type { LevelCross } from "../roundLevels";
+import type { LiqAlert } from "../liquidations";
 
 const ICON: Record<string, string> = {
   watch: "👀",
@@ -119,6 +120,50 @@ export function levelEmbed(c: LevelCross) {
     description: `Price ${up ? "broke above" : "dropped below"} the ${fmt(c.level)} round level — now ${fmt(c.price)}`,
     color: up ? 0x2ecc71 : 0xe74c3c,
   };
+}
+
+/** Compact notional: 82_000_000 → "$82M". */
+function usdShort(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e9) return `$${(a / 1e9).toFixed(a / 1e9 >= 10 ? 0 : 1)}B`;
+  if (a >= 1e6) return `$${(a / 1e6).toFixed(a / 1e6 >= 10 ? 0 : 1)}M`;
+  if (a >= 1e3) return `$${(a / 1e3).toFixed(0)}K`;
+  return `$${Math.round(a)}`;
+}
+
+const price = (n: number) =>
+  `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+
+/**
+ * Build the Discord embed for a large estimated liquidation cluster.
+ *
+ * "est." is not decoration. The notional is inferred: each OI *increase* is
+ * split 50/50 long/short and spread across an ASSUMED leverage mix — it is not
+ * a measured stack of resting liquidation orders, and Hyperliquid is only a
+ * slice of total perp OI. Deliberately no "cascade risk" wording: nothing here
+ * has measured whether price actually cascades into these levels, and claiming
+ * it would be the same unearned confidence EDGE_STATUS exists to prevent.
+ */
+export function liqClusterEmbed(a: LiqAlert) {
+  const base = a.symbol.replace(/USDT$/, "");
+  const long = a.side === "long";
+  // Matches convictionLine's colour language: 🟧 downside, 🟪 upside.
+  const color = long ? 0xe67e22 : 0x9b59b6;
+  const where = long ? "below" : "above";
+
+  return {
+    title: `⚠️ HL est. ${a.side}-liq cluster ${usdShort(a.notionalUsd)} · ${base}`,
+    description:
+      `${a.distPct.toFixed(1)}% ${where} at ${price(a.price)} · spot ${price(a.currentPrice)} · hyperliquid:${base.toLowerCase()}\n` +
+      `Estimated from Hyperliquid OI + an assumed leverage mix — not observed orders`,
+    color,
+    footer: { text: "estimate, not measured depth · context only, no direction claim" },
+  };
+}
+
+/** POST estimated liq-cluster alerts to the Discord channel webhook. */
+export async function sendLiqClusters(alerts: LiqAlert[]): Promise<void> {
+  await postEmbeds(alerts.map(liqClusterEmbed));
 }
 
 /** POST zone signals to the Discord channel webhook. No-op if unconfigured. */

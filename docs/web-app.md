@@ -36,7 +36,7 @@ web/src/
     discord/              # ── all Discord I/O, one file per surface ──
       transport.ts        #   postEmbeds(embeds, target) — ONLY place that
                           #   touches a webhook URL
-      alerts.ts           #   ① signal / level / trade-entry / trade-exit embeds
+      alerts.ts           #   ① signal / level / liq / trade-entry / -exit embeds
       summary.ts          #   ② sendSummary → the summary channel
       scan.ts             #   ③ /scan embed builder
     ── ① ALERTS domain ──
@@ -45,7 +45,7 @@ web/src/
     dedupe.ts             # Upstash de-dupe of repeat signals
     journal.ts            # forward paper-trade record + forwardNotes() (Redis)
     roundLevels.ts        # round-number crossing detection (Redis-backed)
-    liquidations.ts       # estimated liq clusters (forward-accumulated, Redis)
+    liquidations.ts       # estimated liq clusters + cluster alerts (Redis)
     derivatives.ts        # OI + funding + mark from Hyperliquid (one call)
     ── ② SUMMARY domain ──
     summary.ts            # builds the daily briefing (content, not transport)
@@ -59,7 +59,7 @@ web/src/
     projection.ts         # BTC monthly history (seed+Binance) + Monte Carlo/cycle projection
     data/btc-monthly-seed.json # committed Bitstamp month-end closes 2013–2017
     redisClient.ts        # shared Upstash client (KV_REST_API_* or UPSTASH_*)
-    config.ts             # SYMBOLS, CONFIG, EDGE_STATUS, ROUND_STEP, BINANCE_HOSTS
+    config.ts             # SYMBOLS, CONFIG, EDGE_STATUS, ROUND_STEP, LIQ_ALERT, BINANCE_HOSTS
     types.ts, ui.ts       # shared types + UI helpers
   proxy.ts                # Basic Auth gate (all routes except /api/cron|discord/*)
   scripts/
@@ -102,7 +102,14 @@ analysis, not a forecast.
   Exempt from the Basic Auth proxy gate.
 - **Does:** analyze all `SYMBOLS` in parallel → collect zone signals +
   round-level crossings → `filterUnseen` de-dupe → POST to Discord.
-- **Returns:** `{ ok, scanned, found, sent, crossed, errors? }`.
+- **Returns:** `{ ok, scanned, found, sent, crossed, liqAlerts, liqTop,
+  errors? }`. `liqTop` reports the largest estimated liq cluster per side every
+  run (even when nothing fires) so the alert floor can be calibrated from real
+  numbers.
+- **Liq maps are built lazily.** Each one `LRANGE`s up to 3000 stored OI samples
+  (~108 KB) out of Redis, making it the heaviest operation in the route. They're
+  computed only for `LIQ_ALERT.symbols` plus symbols that actually produced a
+  signal — typically 1 instead of 5, since `fresh` is empty on most runs.
 - **Stateless signal logic** (`evaluate` in `signals.ts`) — detects
   watch/break/retest purely from the current candle window, which is what makes
   it safe to run as an isolated serverless invocation.
